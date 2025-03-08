@@ -16,6 +16,16 @@ import pathlib
 # .env 파일 로드
 load_dotenv()
 
+# OpenAI API 토큰 사용량 및 비용 추적을 위한 변수
+total_prompt_tokens = 0
+total_completion_tokens = 0
+total_tokens = 0
+
+# GPT-3.5-turbo 모델 가격 (2023년 기준, 변경될 수 있음)
+PRICE_PER_1K_PROMPT_TOKENS = 0.0015  # USD per 1K tokens
+PRICE_PER_1K_COMPLETION_TOKENS = 0.002  # USD per 1K tokens
+USD_TO_KRW_RATE = 1350  # 달러 대 원화 환율 (변동될 수 있음)
+
 def get_google_news(query='', country='kr', language='ko'):
     """
     Google News RSS 피드에서 최신 뉴스를 가져오는 함수
@@ -61,20 +71,8 @@ def get_google_news(query='', country='kr', language='ko'):
             print(f"오류: HTTP 상태 코드 {response.status_code}")
             return []
         
-        # 응답 내용 확인 (디버깅용)
-        print(f"응답 길이: {len(response.content)} 바이트")
-        print(f"응답 시작 부분: {response.content[:200]}")
-        
         # XML 파싱
         root = ET.fromstring(response.content)
-        
-        # XML 네임스페이스 정의
-        namespaces = {
-            'atom': 'http://www.w3.org/2005/Atom',
-            'dc': 'http://purl.org/dc/elements/1.1/',
-            'content': 'http://purl.org/rss/1.0/modules/content/',
-            'media': 'http://search.yahoo.com/mrss/'
-        }
         
         # 뉴스 기사 목록 생성
         news_items = []
@@ -160,7 +158,6 @@ def get_google_news(query='', country='kr', language='ko'):
             
             news_items.append(news_item)
         
-        # 최근 2일 이내 기사 수 출력
         print(f"최근 2일 이내 기사 수: {len(news_items)}개")
         
         return news_items
@@ -170,7 +167,6 @@ def get_google_news(query='', country='kr', language='ko'):
         return []
     except ET.ParseError as e:
         print(f"XML 파싱 오류: {e}")
-        print(f"응답 내용: {response.content[:500]}")
         return []
     except Exception as e:
         print(f"오류 발생: {e}")
@@ -244,6 +240,8 @@ def summarize_with_openai(text, title):
     반환값:
         str: 요약된 텍스트
     """
+    global total_prompt_tokens, total_completion_tokens, total_tokens
+    
     # OpenAI API 키 가져오기
     api_key = os.getenv('OPENAI_API_KEY')
     
@@ -262,7 +260,7 @@ def summarize_with_openai(text, title):
         
         # 요청 데이터
         data = {
-            "model": "gpt-4o-mini",
+            "model": "gpt-3.5-turbo",
             "messages": [
                 {
                     "role": "system",
@@ -284,10 +282,22 @@ def summarize_with_openai(text, title):
         if response.status_code == 200:
             result = response.json()
             summary = result['choices'][0]['message']['content'].strip()
+            
+            # 토큰 사용량 추적
+            if 'usage' in result:
+                prompt_tokens = result['usage'].get('prompt_tokens', 0)
+                completion_tokens = result['usage'].get('completion_tokens', 0)
+                tokens = result['usage'].get('total_tokens', 0)
+                
+                total_prompt_tokens += prompt_tokens
+                total_completion_tokens += completion_tokens
+                total_tokens += tokens
+                
+                print(f"API 호출 토큰 사용량: 프롬프트 {prompt_tokens}, 완성 {completion_tokens}, 총 {tokens}")
+            
             return summary
         else:
             print(f"OpenAI API 오류: {response.status_code}")
-            print(response.text)
             return f"요약 생성 중 오류가 발생했습니다. 상태 코드: {response.status_code}"
     
     except Exception as e:
@@ -321,13 +331,14 @@ def display_news(news_items, limit=10):
             print(f"요약: {item['summary']}")
         print(f"{'-' * 80}")
 
-def save_to_file(news_items, result_dir="result"):
+def save_to_file(news_items, result_dir="result", include_token_info=True):
     """
     뉴스 기사 목록을 파일에 저장하는 함수
     
     매개변수:
         news_items (list): 뉴스 기사 목록
         result_dir (str): 결과 파일을 저장할 디렉토리 (기본값: "result")
+        include_token_info (bool): 토큰 사용량 정보 포함 여부
     
     반환값:
         str: 저장된 파일 경로
@@ -361,6 +372,22 @@ def save_to_file(news_items, result_dir="result"):
             
             f.write(f"\n저장 시간: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
             f.write(f"검색 기간: 최근 2일 이내 ({(datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')} ~ {datetime.now().strftime('%Y-%m-%d')})\n")
+            
+            # 토큰 사용량 정보 추가
+            if include_token_info and total_tokens > 0:
+                prompt_cost = (total_prompt_tokens / 1000) * PRICE_PER_1K_PROMPT_TOKENS
+                completion_cost = (total_completion_tokens / 1000) * PRICE_PER_1K_COMPLETION_TOKENS
+                total_cost = prompt_cost + completion_cost
+                total_cost_krw = total_cost * USD_TO_KRW_RATE
+                
+                f.write(f"\n{'=' * 80}\n")
+                f.write(f"{'OpenAI API 토큰 사용량 정보':^80}\n")
+                f.write(f"{'=' * 80}\n\n")
+                f.write(f"프롬프트 토큰: {total_prompt_tokens:,}개\n")
+                f.write(f"완성 토큰: {total_completion_tokens:,}개\n")
+                f.write(f"총 토큰: {total_tokens:,}개\n\n")
+                f.write(f"예상 비용: ${total_cost:.6f} (약 {total_cost_krw:.2f}원)\n")
+                f.write(f"참고: https://platform.openai.com/settings/organization/limits\n")
         
         print(f"\n뉴스 기사가 '{filename}' 파일에 저장되었습니다.")
         return filename
@@ -368,6 +395,48 @@ def save_to_file(news_items, result_dir="result"):
     except Exception as e:
         print(f"파일 저장 오류: {e}")
         return None
+
+def calculate_token_cost():
+    """
+    OpenAI API 토큰 사용량 및 비용을 계산하는 함수
+    
+    반환값:
+        dict: 토큰 사용량 및 비용 정보
+    """
+    prompt_cost = (total_prompt_tokens / 1000) * PRICE_PER_1K_PROMPT_TOKENS
+    completion_cost = (total_completion_tokens / 1000) * PRICE_PER_1K_COMPLETION_TOKENS
+    total_cost = prompt_cost + completion_cost
+    total_cost_krw = total_cost * USD_TO_KRW_RATE
+    
+    return {
+        'prompt_tokens': total_prompt_tokens,
+        'completion_tokens': total_completion_tokens,
+        'total_tokens': total_tokens,
+        'prompt_cost_usd': prompt_cost,
+        'completion_cost_usd': completion_cost,
+        'total_cost_usd': total_cost,
+        'total_cost_krw': total_cost_krw
+    }
+
+def display_token_info():
+    """
+    OpenAI API 토큰 사용량 및 비용 정보를 콘솔에 출력하는 함수
+    """
+    if total_tokens == 0:
+        print("\nOpenAI API를 사용하지 않았거나 토큰 정보를 가져오지 못했습니다.")
+        return
+    
+    cost_info = calculate_token_cost()
+    
+    print(f"\n{'=' * 80}")
+    print(f"{'OpenAI API 토큰 사용량 정보':^80}")
+    print(f"{'=' * 80}")
+    print(f"프롬프트 토큰: {cost_info['prompt_tokens']:,}개")
+    print(f"완성 토큰: {cost_info['completion_tokens']:,}개")
+    print(f"총 토큰: {cost_info['total_tokens']:,}개")
+    print(f"\n예상 비용: ${cost_info['total_cost_usd']:.6f} (약 {cost_info['total_cost_krw']:.2f}원)")
+    print(f"참고: https://platform.openai.com/settings/organization/limits")
+    print(f"{'=' * 80}")
 
 def main():
     """
@@ -416,6 +485,9 @@ def main():
         
         # 결과를 파일에 저장
         save_to_file(all_news_items)
+        
+        # 토큰 사용량 및 비용 정보 출력
+        display_token_info()
     else:
         print("최근 2일 이내 뉴스를 가져오지 못했습니다.")
 
