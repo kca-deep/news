@@ -542,8 +542,8 @@ def main():
             query_news = get_google_news(query=query)
             
             if query_news:
-                # 각 검색어별로 최대 3개의 뉴스만 선택
-                selected_news = query_news[:3]
+                # 각 검색어별로 최대 5개의 뉴스만 선택
+                selected_news = query_news[:5]
                 total_articles += len(selected_news)
                 
                 # 병렬 처리로 뉴스 아이템 처리
