@@ -12,6 +12,19 @@ import json
 import urllib.parse
 import email.utils
 import pathlib
+import logging
+from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
+import sys
+
+# 로깅 설정
+logging.basicConfig(
+    level=logging.WARNING,  # INFO에서 WARNING으로 변경
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('news_crawler')
 
 # .env 파일 로드
 load_dotenv()
@@ -21,10 +34,13 @@ total_prompt_tokens = 0
 total_completion_tokens = 0
 total_tokens = 0
 
-# GPT-3.5-turbo 모델 가격 (2023년 기준, 변경될 수 있음)
-PRICE_PER_1K_PROMPT_TOKENS = 0.0015  # USD per 1K tokens
-PRICE_PER_1K_COMPLETION_TOKENS = 0.002  # USD per 1K tokens
-USD_TO_KRW_RATE = 1350  # 달러 대 원화 환율 (변동될 수 있음)
+# GPT-4o-mini 모델 가격 (2024년 기준)
+PRICE_PER_1K_PROMPT_TOKENS = 0.00015  # USD per 1K tokens
+PRICE_PER_1K_COMPLETION_TOKENS = 0.00060  # USD per 1K tokens
+USD_TO_KRW_RATE = 1450  # 달러 대 원화 환율 (변동될 수 있음)
+
+# 사용할 GPT 모델
+GPT_MODEL = "gpt-4o-mini"
 
 def get_google_news(query='', country='kr', language='ko'):
     """
@@ -55,7 +71,7 @@ def get_google_news(query='', country='kr', language='ko'):
     # 국가 및 언어 파라미터 추가
     url += f"&hl={language}-{country}&gl={country}&ceid={country}:{language}"
     
-    print(f"요청 URL: {url}")
+    logger.info(f"요청 URL: {url}")
     
     try:
         # HTTP 요청 헤더 설정 (User-Agent 추가)
@@ -68,7 +84,7 @@ def get_google_news(query='', country='kr', language='ko'):
         
         # 응답 상태 확인
         if response.status_code != 200:
-            print(f"오류: HTTP 상태 코드 {response.status_code}")
+            logger.error(f"오류: HTTP 상태 코드 {response.status_code}")
             return []
         
         # XML 파싱
@@ -103,7 +119,7 @@ def get_google_news(query='', country='kr', language='ko'):
                     # 최근 2일 이내 기사인지 확인
                     is_recent = parsed_date >= two_days_ago
                 except Exception as e:
-                    print(f"날짜 파싱 오류: {e}")
+                    logger.warning(f"날짜 파싱 오류: {e}")
                     formatted_date = pub_date_elem.text
                     # 날짜 파싱 오류 시 기본적으로 포함 (True)
                     is_recent = True
@@ -158,75 +174,83 @@ def get_google_news(query='', country='kr', language='ko'):
             
             news_items.append(news_item)
         
-        print(f"최근 2일 이내 기사 수: {len(news_items)}개")
+        logger.info(f"최근 2일 이내 기사 수: {len(news_items)}개")
         
         return news_items
     
     except requests.exceptions.RequestException as e:
-        print(f"요청 오류 발생: {e}")
+        logger.error(f"요청 오류 발생: {e}")
         return []
     except ET.ParseError as e:
-        print(f"XML 파싱 오류: {e}")
+        logger.error(f"XML 파싱 오류: {e}")
         return []
     except Exception as e:
-        print(f"오류 발생: {e}")
+        logger.error(f"오류 발생: {e}")
         return []
 
 def get_article_content(url):
     """
     뉴스 기사 URL에서 본문 내용을 가져오는 함수
+    BeautifulSoup를 사용하여 더 정확한 내용 추출
     
     매개변수:
         url (str): 뉴스 기사 URL
     
     반환값:
-        str: 뉴스 기사 본문 내용
+        tuple: (기사 내용, 출처)
     """
     try:
-        # HTTP 요청 헤더 설정 (User-Agent 추가)
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-        # 뉴스 기사 요청
         response = requests.get(url, headers=headers, timeout=10)
         
-        # 응답 상태 확인
         if response.status_code != 200:
-            print(f"오류: HTTP 상태 코드 {response.status_code}")
+            logger.error(f"오류: HTTP 상태 코드 {response.status_code}")
             return "기사 내용을 가져올 수 없습니다.", None
         
-        # 간단한 본문 추출 (메타 태그 또는 본문 태그에서 추출)
-        # 실제로는 각 뉴스 사이트마다 구조가 다르므로 더 복잡한 파싱이 필요할 수 있음
-        content = response.text
+        # BeautifulSoup으로 파싱 (html.parser 사용)
+        soup = BeautifulSoup(response.content, 'html.parser')
         
-        # 출처 정보 추출 시도
+        # 출처 정보 추출
         source = None
+        meta_site_name = soup.find('meta', property='og:site_name')
+        if meta_site_name:
+            source = meta_site_name.get('content')
         
-        # 메타 태그에서 출처 추출
-        source_match = re.search(r'<meta[^>]*property=["\']og:site_name["\'][^>]*content=["\'](.*?)["\']', content, re.IGNORECASE)
-        if source_match:
-            source = source_match.group(1).strip()
+        # 본문 내용 추출 시도
+        content = ""
         
-        # 메타 태그에서 설명 추출
-        description_match = re.search(r'<meta[^>]*name=["\']description["\'][^>]*content=["\'](.*?)["\']', content, re.IGNORECASE)
-        if description_match:
-            return description_match.group(1), source
+        # 1. article 태그 내용 추출
+        article = soup.find('article')
+        if article:
+            content = article.get_text(strip=True)
         
-        # 본문 태그에서 텍스트 추출 (간단한 방식)
-        body_match = re.search(r'<body[^>]*>(.*?)</body>', content, re.IGNORECASE | re.DOTALL)
-        if body_match:
-            # HTML 태그 제거
-            body_text = re.sub(r'<[^>]+>', ' ', body_match.group(1))
-            # 여러 공백 제거
-            body_text = re.sub(r'\s+', ' ', body_text).strip()
+        # 2. 메타 설명 추출
+        if not content:
+            meta_desc = soup.find('meta', {'name': 'description'}) or soup.find('meta', property='og:description')
+            if meta_desc:
+                content = meta_desc.get('content', '')
+        
+        # 3. 주요 본문 태그에서 내용 추출
+        if not content:
+            main_content_tags = soup.find_all(['p', 'div'], class_=re.compile(r'article|content|body|text|main', re.I))
+            content = ' '.join(tag.get_text(strip=True) for tag in main_content_tags if tag.get_text(strip=True))
+        
+        # 내용 정제
+        if content:
+            # 불필요한 공백 제거
+            content = re.sub(r'\s+', ' ', content).strip()
+            # 광고 문구 등 제거
+            content = re.sub(r'(광고|\[광고\]|sponsored content|AD).*?(?=\s|$)', '', content, flags=re.I)
             # 적절한 길이로 자르기
-            return body_text[:1000] + "..." if len(body_text) > 1000 else body_text, source
+            return content[:2000] + "..." if len(content) > 2000 else content, source
         
         return "기사 내용을 추출할 수 없습니다.", source
     
     except Exception as e:
-        print(f"기사 내용 가져오기 오류: {e}")
+        logger.error(f"기사 내용 가져오기 오류: {e}")
         return "기사 내용을 가져오는 중 오류가 발생했습니다.", None
 
 def summarize_with_openai(text, title):
@@ -246,6 +270,7 @@ def summarize_with_openai(text, title):
     api_key = os.getenv('OPENAI_API_KEY')
     
     if not api_key or api_key == 'your_openai_api_key_here':
+        logger.error("OpenAI API 키가 설정되지 않았습니다.")
         return "OpenAI API 키가 설정되지 않았습니다. .env 파일에 OPENAI_API_KEY를 설정해주세요."
     
     try:
@@ -258,24 +283,34 @@ def summarize_with_openai(text, title):
             "Authorization": f"Bearer {api_key}"
         }
         
+        # 개선된 요약 프롬프트
+        system_prompt = """당신은 뉴스 기사를 명확하고 간결하게 요약하는 전문가입니다. 
+다음 규칙을 따라 요약해주세요:
+1. 기사의 핵심 내용과 중요 사실만 포함하세요.
+2. 3-4개의 간결한 문장으로 요약하세요.
+3. 원문의 중요한 정보를 누락하지 마세요.
+4. 객관적인 사실만 포함하고 의견이나 해석은 배제하세요.
+5. 요약은 기사의 전체 맥락을 이해할 수 있도록 작성하세요."""
+        
         # 요청 데이터
         data = {
-            "model": "gpt-3.5-turbo",
+            "model": GPT_MODEL,
             "messages": [
                 {
                     "role": "system",
-                    "content": "당신은 뉴스 기사를 간결하게 요약하는 전문가입니다. 주어진 뉴스 기사를 3-4문장으로 요약해주세요."
+                    "content": system_prompt
                 },
                 {
                     "role": "user",
-                    "content": f"제목: {title}\n\n내용: {text}\n\n이 뉴스 기사를 3-4문장으로 요약해주세요."
+                    "content": f"제목: {title}\n\n내용: {text}\n\n위 뉴스 기사를 요약해주세요."
                 }
             ],
-            "temperature": 0.5,
+            "temperature": 0.3,  # 더 일관된 결과를 위해 온도 낮춤
             "max_tokens": 300
         }
         
         # API 요청
+        logger.info(f"OpenAI API 요청 중: {GPT_MODEL} 모델 사용")
         response = requests.post(url, headers=headers, json=data, timeout=30)
         
         # 응답 확인
@@ -293,15 +328,17 @@ def summarize_with_openai(text, title):
                 total_completion_tokens += completion_tokens
                 total_tokens += tokens
                 
-                print(f"API 호출 토큰 사용량: 프롬프트 {prompt_tokens}, 완성 {completion_tokens}, 총 {tokens}")
+                logger.info(f"API 호출 토큰 사용량: 프롬프트 {prompt_tokens}, 완성 {completion_tokens}, 총 {tokens}")
             
             return summary
         else:
-            print(f"OpenAI API 오류: {response.status_code}")
+            logger.error(f"OpenAI API 오류: {response.status_code}")
+            error_detail = response.json() if response.content else "상세 정보 없음"
+            logger.error(f"오류 상세: {error_detail}")
             return f"요약 생성 중 오류가 발생했습니다. 상태 코드: {response.status_code}"
     
     except Exception as e:
-        print(f"OpenAI API 요청 오류: {e}")
+        logger.error(f"OpenAI API 요청 오류: {e}")
         return "요약 생성 중 오류가 발생했습니다."
 
 def display_news(news_items, limit=10):
@@ -331,7 +368,7 @@ def display_news(news_items, limit=10):
             print(f"요약: {item['summary']}")
         print(f"{'-' * 80}")
 
-def save_to_file(news_items, result_dir="result", include_token_info=True):
+def save_to_file(news_items, result_dir="result", include_token_info=True, no_result_topics=None):
     """
     뉴스 기사 목록을 파일에 저장하는 함수
     
@@ -339,6 +376,7 @@ def save_to_file(news_items, result_dir="result", include_token_info=True):
         news_items (list): 뉴스 기사 목록
         result_dir (str): 결과 파일을 저장할 디렉토리 (기본값: "result")
         include_token_info (bool): 토큰 사용량 정보 포함 여부
+        no_result_topics (list): 검색 결과가 없는 토픽 목록
     
     반환값:
         str: 저장된 파일 경로
@@ -373,27 +411,34 @@ def save_to_file(news_items, result_dir="result", include_token_info=True):
             f.write(f"\n저장 시간: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
             f.write(f"검색 기간: 최근 2일 이내 ({(datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')} ~ {datetime.now().strftime('%Y-%m-%d')})\n")
             
+            # 검색 결과가 없는 토픽 정보 추가
+            if no_result_topics:
+                f.write(f"\n{'=' * 80}\n")
+                f.write(f"{'검색 결과가 없는 토픽':^80}\n")
+                f.write(f"{'=' * 80}\n\n")
+                for topic in no_result_topics:
+                    f.write(f"- {topic}\n")
+                f.write("\n")
+            
             # 토큰 사용량 정보 추가
             if include_token_info and total_tokens > 0:
-                prompt_cost = (total_prompt_tokens / 1000) * PRICE_PER_1K_PROMPT_TOKENS
-                completion_cost = (total_completion_tokens / 1000) * PRICE_PER_1K_COMPLETION_TOKENS
-                total_cost = prompt_cost + completion_cost
-                total_cost_krw = total_cost * USD_TO_KRW_RATE
+                cost_info = calculate_token_cost()
                 
                 f.write(f"\n{'=' * 80}\n")
                 f.write(f"{'OpenAI API 토큰 사용량 정보':^80}\n")
                 f.write(f"{'=' * 80}\n\n")
-                f.write(f"프롬프트 토큰: {total_prompt_tokens:,}개\n")
-                f.write(f"완성 토큰: {total_completion_tokens:,}개\n")
-                f.write(f"총 토큰: {total_tokens:,}개\n\n")
-                f.write(f"예상 비용: ${total_cost:.6f} (약 {total_cost_krw:.2f}원)\n")
+                f.write(f"사용 모델: {GPT_MODEL}\n")
+                f.write(f"프롬프트 토큰: {cost_info['prompt_tokens']:,}개\n")
+                f.write(f"완성 토큰: {cost_info['completion_tokens']:,}개\n")
+                f.write(f"총 토큰: {cost_info['total_tokens']:,}개\n\n")
+                f.write(f"예상 비용: ${cost_info['total_cost_usd']:.6f} (약 {cost_info['total_cost_krw']:.2f}원)\n")
                 f.write(f"참고: https://platform.openai.com/settings/organization/limits\n")
         
-        print(f"\n뉴스 기사가 '{filename}' 파일에 저장되었습니다.")
+        logger.info(f"뉴스 기사가 '{filename}' 파일에 저장되었습니다.")
         return filename
     
     except Exception as e:
-        print(f"파일 저장 오류: {e}")
+        logger.error(f"파일 저장 오류: {e}")
         return None
 
 def calculate_token_cost():
@@ -423,7 +468,7 @@ def display_token_info():
     OpenAI API 토큰 사용량 및 비용 정보를 콘솔에 출력하는 함수
     """
     if total_tokens == 0:
-        print("\nOpenAI API를 사용하지 않았거나 토큰 정보를 가져오지 못했습니다.")
+        logger.info("OpenAI API를 사용하지 않았거나 토큰 정보를 가져오지 못했습니다.")
         return
     
     cost_info = calculate_token_cost()
@@ -431,6 +476,7 @@ def display_token_info():
     print(f"\n{'=' * 80}")
     print(f"{'OpenAI API 토큰 사용량 정보':^80}")
     print(f"{'=' * 80}")
+    print(f"사용 모델: {GPT_MODEL}")
     print(f"프롬프트 토큰: {cost_info['prompt_tokens']:,}개")
     print(f"완성 토큰: {cost_info['completion_tokens']:,}개")
     print(f"총 토큰: {cost_info['total_tokens']:,}개")
@@ -438,11 +484,38 @@ def display_token_info():
     print(f"참고: https://platform.openai.com/settings/organization/limits")
     print(f"{'=' * 80}")
 
+def process_news_item(item):
+    """
+    개별 뉴스 아이템을 처리하는 함수
+    
+    매개변수:
+        item (dict): 처리할 뉴스 아이템
+    
+    반환값:
+        dict: 처리된 뉴스 아이템
+    """
+    try:
+        # 기사 내용 가져오기
+        article_content, article_source = get_article_content(item['link'])
+        
+        # 기사 출처 업데이트
+        if article_source and item['source'] == '알 수 없음':
+            item['source'] = article_source
+        
+        # OpenAI API로 요약하기
+        ai_summary = summarize_with_openai(article_content, item['title'])
+        item['ai_summary'] = ai_summary
+        
+        return item
+    except Exception as e:
+        logger.error(f"뉴스 아이템 처리 오류: {e}")
+        return item
+
 def main():
     """
     메인 함수 - 프로그램 실행 시작점
     """
-    print("Google News RSS 피드에서 최근 2일 이내 뉴스 가져오기")
+    print("\nGoogle News RSS 피드에서 최근 2일 이내 뉴스 가져오기")
     print(f"검색 기간: {(datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')} ~ {datetime.now().strftime('%Y-%m-%d')}")
     
     # .env 파일에서 검색어 가져오기
@@ -450,46 +523,89 @@ def main():
     queries = [query.strip() for query in queries_str.split(',')]
     
     all_news_items = []
+    total_articles = 0
+    no_result_topics = []  # 검색 결과가 없는 토픽을 저장할 리스트
     
-    # 각 검색어별로 뉴스 가져오기
-    for query in queries:
-        print(f"\n'{query}' 관련 뉴스 가져오는 중...")
-        query_news = get_google_news(query=query)
-        
-        if query_news:
-            print(f"'{query}' 관련 최근 2일 이내 뉴스 {len(query_news)}개를 찾았습니다.")
+    # 전체 진행률을 표시하는 tqdm 설정
+    with tqdm(
+        total=len(queries),
+        desc="전체 진행률",
+        unit="주제",
+        dynamic_ncols=False,  # 동적 크기 조절 비활성화
+        ncols=100,  # 진행률 바의 전체 너비 고정
+        position=0,
+        leave=True,
+        bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'  # 진행률 바 포맷 지정
+    ) as main_pbar:
+        # 각 검색어별로 뉴스 가져오기
+        for query in queries:
+            query_news = get_google_news(query=query)
             
-            # 각 검색어별로 최대 3개의 뉴스만 처리
-            for item in query_news[:3]:
-                print(f"'{item['title']}' 기사 처리 중...")
+            if query_news:
+                # 각 검색어별로 최대 3개의 뉴스만 선택
+                selected_news = query_news[:3]
+                total_articles += len(selected_news)
                 
-                # 기사 내용 가져오기
-                article_content, article_source = get_article_content(item['link'])
+                # 병렬 처리로 뉴스 아이템 처리
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    processed_items = []
+                    futures = {executor.submit(process_news_item, item): item for item in selected_news}
+                    
+                    for future in futures:
+                        try:
+                            result = future.result()
+                            processed_items.append(result)
+                        except Exception as e:
+                            logger.error(f"뉴스 처리 중 오류 발생: {e}")
                 
-                # 기사 출처 업데이트 (기사 내용에서 추출한 출처가 있는 경우)
-                if article_source and item['source'] == '알 수 없음':
-                    item['source'] = article_source
-                
-                # OpenAI API로 요약하기
-                ai_summary = summarize_with_openai(article_content, item['title'])
-                item['ai_summary'] = ai_summary
-                
-                all_news_items.append(item)
-        else:
-            print(f"'{query}' 관련 최근 2일 이내 뉴스를 가져오지 못했습니다.")
+                all_news_items.extend(processed_items)
+            else:
+                no_result_topics.append(query)  # 검색 결과가 없는 토픽 추가
+            
+            main_pbar.update(1)
     
-    # 모든 뉴스 출력
+    # 모든 뉴스 출력 및 저장
     if all_news_items:
-        print(f"\n총 {len(all_news_items)}개의 최근 2일 이내 뉴스 기사를 처리했습니다.")
-        display_news(all_news_items)
+        print(f"\n총 {len(all_news_items)}개의 뉴스 기사 처리 완료")
         
-        # 결과를 파일에 저장
-        save_to_file(all_news_items)
+        # 결과를 JSON 형식으로도 저장
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        json_filename = f"result/result_{timestamp}.json"
+        
+        # JSON 파일 저장
+        try:
+            pathlib.Path("result").mkdir(parents=True, exist_ok=True)
+            with open(json_filename, 'w', encoding='utf-8') as f:
+                # datetime 객체를 문자열로 변환
+                json_data = []
+                for item in all_news_items:
+                    item_copy = item.copy()
+                    if 'published_datetime' in item_copy:
+                        item_copy['published_datetime'] = item_copy['published_datetime'].isoformat() if item_copy['published_datetime'] else None
+                    json_data.append(item_copy)
+                
+                json.dump(json_data, f, ensure_ascii=False, indent=2)
+            print(f"결과가 '{json_filename}' 파일에 저장되었습니다.")
+        except Exception as e:
+            logger.error(f"JSON 파일 저장 오류: {e}")
+        
+        # 기존 텍스트 파일 형식으로도 저장
+        saved_file = save_to_file(all_news_items, no_result_topics=no_result_topics)
+        if saved_file:
+            print(f"텍스트 결과가 '{saved_file}' 파일에 저장되었습니다.")
+            if no_result_topics:
+                print("\n검색 결과가 없는 토픽:")
+                for topic in no_result_topics:
+                    print(f"- {topic}")
         
         # 토큰 사용량 및 비용 정보 출력
         display_token_info()
     else:
-        print("최근 2일 이내 뉴스를 가져오지 못했습니다.")
+        print("\n최근 2일 이내 뉴스를 가져오지 못했습니다.")
+        if no_result_topics:
+            print("\n검색 결과가 없는 토픽:")
+            for topic in no_result_topics:
+                print(f"- {topic}")
 
 if __name__ == "__main__":
     main() 
