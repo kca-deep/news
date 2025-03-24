@@ -590,23 +590,136 @@ def process_subscriber(subscriber, collected_news_items):
 def get_gmail_service():
     SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
     creds = None
-    if os.path.exists("token.pickle"):
-        with open("token.pickle", "rb") as token:
-            creds = pickle.load(token)
+
+    # 토큰 파일 경로
+    token_json_path = os.getenv("EMAIL_OAUTH2_TOKEN", "token.json")
+    pickle_token_path = "token.pickle"  # 기존 pickle 파일 경로 (하위 호환성 유지)
+
+    # 기존 token.json 파일이 있으면 먼저 시도
+    if os.path.exists(token_json_path):
+        try:
+            log_to_file(f"token.json 파일에서 인증 정보 로드 중", "info")
+            with open(token_json_path, "r") as token_file:
+                import json
+
+                token_data = json.load(token_file)
+                creds = Credentials(
+                    token=token_data.get("token"),
+                    refresh_token=token_data.get("refresh_token"),
+                    token_uri=token_data.get(
+                        "token_uri", "https://oauth2.googleapis.com/token"
+                    ),
+                    client_id=token_data.get("client_id"),
+                    client_secret=token_data.get("client_secret"),
+                    scopes=token_data.get("scopes", SCOPES),
+                )
+        except Exception as e:
+            log_to_file(f"token.json 파일 로드 중 오류 발생: {e}", "warning")
+            creds = None
+
+    # 기존 pickle 파일 시도 (하위 호환성)
+    if creds is None and os.path.exists(pickle_token_path):
+        try:
+            log_to_file("token.pickle 파일에서 인증 정보 로드 중 (하위 호환성)", "info")
+            with open(pickle_token_path, "rb") as token:
+                creds = pickle.load(token)
+        except Exception as e:
+            log_to_file(f"token.pickle 파일 로드 중 오류 발생: {e}", "warning")
+            creds = None
+
+    # 인증 정보가 없거나 유효하지 않은 경우 새로 인증
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
+            log_to_file("토큰 갱신 중...", "info")
             creds.refresh(Request())
         else:
+            log_to_file("새 OAuth 인증 흐름 시작 중...", "info")
             credentials_file = os.getenv("GMAIL_CREDENTIALS_FILE", "credentials.json")
             if not os.path.exists(credentials_file):
                 log_to_file(
                     f"OAuth 인증 정보 파일이 없습니다: {credentials_file}", "error"
                 )
                 return None
-            flow = InstalledAppFlow.from_client_secrets_file(credentials_file, SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open("token.pickle", "wb") as token:
-            pickle.dump(creds, token)
+
+            try:
+                # InstalledAppFlow 설정 (콘솔 인증 방식)
+                # redirect_uri를 명시적으로 'urn:ietf:wg:oauth:2.0:oob'로 설정하는 커스텀 JSON 로드
+                with open(credentials_file, "r") as f:
+                    import json
+
+                    client_config = json.load(f)
+
+                # 리디렉션 URI 설정 추가
+                if "installed" in client_config:
+                    client_config["installed"]["redirect_uris"] = [
+                        "urn:ietf:wg:oauth:2.0:oob"
+                    ]
+                elif "web" in client_config:
+                    client_config["web"]["redirect_uris"] = [
+                        "urn:ietf:wg:oauth:2.0:oob"
+                    ]
+
+                # 수정된 설정으로 InstalledAppFlow 생성
+                flow = InstalledAppFlow.from_client_config(
+                    client_config, SCOPES, redirect_uri="urn:ietf:wg:oauth:2.0:oob"
+                )
+
+                # 인증 URL 생성 및 사용자 안내
+                auth_url, _ = flow.authorization_url(
+                    access_type="offline",
+                    include_granted_scopes="true",
+                )
+
+                print("\n" + "=" * 70)
+                print("Google 계정 인증이 필요합니다.")
+                print(
+                    "아래 URL을 복사하여 웹 브라우저에서 열고 Google 계정으로 로그인하세요:"
+                )
+                print("=" * 70)
+                print(f"\n{auth_url}\n")
+                print("=" * 70)
+
+                # 사용자로부터 인증 코드 입력 받기
+                auth_code = input(
+                    "\n브라우저에서 인증 후 받은 코드를 붙여넣고 Enter 키를 누르세요: "
+                ).strip()
+
+                # 입력받은 코드로 토큰 발급
+                flow.fetch_token(code=auth_code)
+                creds = flow.credentials
+                print("\n인증 성공! 토큰이 저장되었습니다.\n")
+
+            except Exception as e:
+                log_to_file(f"인증 코드 처리 중 오류 발생: {e}", "error")
+                print(f"\n인증 실패: {e}\n")
+                print("자세한 오류 정보:")
+                import traceback
+
+                traceback.print_exc()
+                return None
+
+        # token.json에 저장
+        try:
+            log_to_file("새 인증 정보를 token.json에 저장 중", "info")
+            token_data = {
+                "token": creds.token,
+                "refresh_token": creds.refresh_token,
+                "token_uri": creds.token_uri,
+                "client_id": creds.client_id,
+                "client_secret": creds.client_secret,
+                "scopes": creds.scopes,
+            }
+            with open(token_json_path, "w") as token_file:
+                import json
+
+                json.dump(token_data, token_file)
+
+            # 하위 호환성을 위해 pickle 파일도 유지 (선택적)
+            with open(pickle_token_path, "wb") as token:
+                pickle.dump(creds, token)
+        except Exception as e:
+            log_to_file(f"인증 정보 저장 중 오류 발생: {e}", "error")
+
     try:
         service = build("gmail", "v1", credentials=creds)
         return service
