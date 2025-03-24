@@ -6,6 +6,22 @@
 result/
 result_*/
 
+# 로그 폴더 및 로그 파일
+logs/
+*.log
+openai_api_usage_*.csv
+openai_daily_report_*.txt
+
+# API 인증 및 토큰 관련 파일
+token.pickle
+token.json
+credentials.json
+*.pickle
+*.token
+
+# 구독자 데이터 (민감한 정보 포함)
+subscribers.txt
+
 # Python 관련 파일
 __pycache__/
 *.py[cod]

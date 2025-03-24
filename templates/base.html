@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}KCA 뉴스레터 관리{% endblock %}</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Noto Sans KR -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap">
+    
+    <!-- Inter Font for UI -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+    
+    <script>
+      tailwind.config = {
+        theme: {
+          container: {
+            center: true,
+            padding: "2rem",
+            screens: {
+              "2xl": "1400px",
+            },
+          },
+          extend: {
+            colors: {
+              border: "hsl(var(--border))",
+              input: "hsl(var(--input))",
+              ring: "hsl(var(--ring))",
+              background: "hsl(var(--background))",
+              foreground: "hsl(var(--foreground))",
+              primary: {
+                DEFAULT: "hsl(var(--primary))",
+                foreground: "hsl(var(--primary-foreground))",
+              },
+              secondary: {
+                DEFAULT: "hsl(var(--secondary))",
+                foreground: "hsl(var(--secondary-foreground))",
+              },
+              destructive: {
+                DEFAULT: "hsl(var(--destructive))",
+                foreground: "hsl(var(--destructive-foreground))",
+              },
+              muted: {
+                DEFAULT: "hsl(var(--muted))",
+                foreground: "hsl(var(--muted-foreground))",
+              },
+              accent: {
+                DEFAULT: "hsl(var(--accent))",
+                foreground: "hsl(var(--accent-foreground))",
+              },
+              popover: {
+                DEFAULT: "hsl(var(--popover))",
+                foreground: "hsl(var(--popover-foreground))",
+              },
+              card: {
+                DEFAULT: "hsl(var(--card))",
+                foreground: "hsl(var(--card-foreground))",
+              },
+            },
+            borderRadius: {
+              lg: "var(--radius)",
+              md: "calc(var(--radius) - 2px)",
+              sm: "calc(var(--radius) - 4px)",
+            },
+          },
+          fontFamily: {
+            sans: ['Noto Sans KR', 'Inter', 'sans-serif'],
+          },
+        },
+      }
+    </script>
+    
+    <style>
+      :root {
+        --background: 0 0% 100%;
+        --foreground: 222.2 84% 4.9%;
+        --card: 0 0% 100%;
+        --card-foreground: 222.2 84% 4.9%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222.2 84% 4.9%;
+        --primary: 221.2 83.2% 53.3%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 210 40% 96.1%;
+        --secondary-foreground: 222.2 47.4% 11.2%;
+        --muted: 210 40% 96.1%;
+        --muted-foreground: 215.4 16.3% 46.9%;
+        --accent: 210 40% 96.1%;
+        --accent-foreground: 222.2 47.4% 11.2%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 214.3 31.8% 91.4%;
+        --input: 214.3 31.8% 91.4%;
+        --ring: 221.2 83.2% 53.3%;
+        --radius: 0.5rem;
+      }
+      
+      body {
+        font-family: 'Noto Sans KR', 'Inter', sans-serif;
+        background-color: #f8fafc;
+      }
+      
+      /* Shadcn-style components */
+      .btn-primary {
+        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700 h-10 px-4 py-2 shadow-md border border-blue-500/20 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-lg;
+      }
+      
+      .btn-secondary {
+        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-gray-100 text-gray-700 hover:bg-gray-200 h-10 px-4 py-2 shadow-md border border-gray-200 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-lg;
+      }
+      
+      .btn-outline {
+        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-gray-300 bg-transparent hover:bg-gray-50 h-10 px-4 py-2 text-gray-700 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-sm;
+      }
+      
+      .btn-destructive {
+        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-red-100 text-red-600 hover:bg-red-200 h-10 px-4 py-2 shadow-md border border-red-200 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-lg;
+      }
+      
+      .form-input {
+        @apply flex h-10 w-full rounded-md border border-blue-300 bg-blue-50/50 px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-gray-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 shadow-md shadow-blue-100/60 focus:shadow-blue-200/60 transition-all duration-200 outline-none text-blue-900;
+      }
+      
+      .input-group {
+        @apply mb-5 p-4 rounded-md border border-blue-100 bg-white shadow-sm;
+      }
+      
+      .form-label {
+        @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 mb-2 block text-gray-700 flex items-center;
+      }
+      
+      .alert-success {
+        @apply relative w-full rounded-lg border border-green-200 p-4 mb-4 text-sm [&>svg]:text-green-500 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg~*]:pl-7 bg-green-50 text-green-800 shadow-sm;
+      }
+      
+      .alert-error {
+        @apply relative w-full rounded-lg border border-red-200 p-4 mb-4 text-sm [&>svg]:text-red-500 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg~*]:pl-7 bg-red-50 text-red-800 shadow-sm;
+      }
+      
+      .table-container {
+        @apply w-full overflow-auto relative rounded-md border border-gray-200 shadow-sm;
+      }
+      
+      .table-header {
+        @apply h-12 px-4 text-left align-middle font-medium text-gray-600 bg-gray-50 [&:has([role=checkbox])]:pr-0;
+      }
+      
+      .table-row {
+        @apply border-b transition-colors hover:bg-blue-50/50 data-[state=selected]:bg-blue-50;
+      }
+      
+      .table-cell {
+        @apply p-4 align-middle [&:has([role=checkbox])]:pr-0 text-sm text-gray-700;
+      }
+      
+      .tag {
+        @apply inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-blue-200 bg-blue-100/50 text-blue-700 hover:bg-blue-200/50 shadow-sm;
+      }
+      
+      .masthead {
+        @apply bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2 text-center text-sm font-medium shadow-md;
+      }
+      
+      .footer {
+        @apply mt-8 pt-4 border-t border-gray-200 text-gray-500 text-xs;
+      }
+      
+      .link-button {
+        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700 h-10 px-4 py-2 shadow-md border border-blue-500/20 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-lg;
+      }
+      
+      .inline-form-group {
+        @apply flex items-center gap-2 mb-4;
+      }
+      
+      .inline-form-group label {
+        @apply w-1/4 font-medium text-gray-700 flex items-center;
+      }
+      
+      .inline-form-group .form-input-container {
+        @apply w-3/4;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen bg-gray-50 font-sans antialiased">
+
+    <div class="container flex flex-col mx-auto mt-8 px-4 min-h-screen">
+      <div class="w-full mb-6">
+        <!-- 운영기관 식별자 (Identifier) -->
+        <div class="flex items-center mb-2">
+          <span class="text-gray-600 text-sm font-medium flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            KCA 뉴스레터 관리
+          </span>
+        </div>
+      </div>
+      
+      <div class="flex-1">
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6 border border-gray-200">
+          {% block content %}{% endblock %}
+        </div>
+      </div>
+      
+      <!-- 푸터 (Footer) -->
+      <div class="footer">
+        <div class="flex flex-col md:flex-row justify-between items-center gap-2">
+          <div>
+            <p>© 2024 KCA 뉴스레터 관리</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html> 
