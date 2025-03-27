@@ -766,15 +766,25 @@ class SubscriberManager:
     def fetch_news_for_subscriber(self, subscriber: dict) -> list:
         """
         각 구독자의 관심 토픽에 대해 최대 30개의 최신 뉴스를 수집하고 처리
+        중복 토픽은 한 번만 처리하여 이중 유사도 검색을 방지
         """
         collected_news = []
         topics = subscriber.get("topics", [])
+        # 중복 토픽 제거
+        unique_topics = list(dict.fromkeys(topics))
         name = subscriber.get("name", "구독자")
+
+        # 토픽 중복이 있는 경우 로그에 기록
+        if len(unique_topics) < len(topics):
+            logger.info(
+                f"{name}의 토픽 목록에서 {len(topics) - len(unique_topics)}개 중복 제거됨"
+            )
+
         with tqdm(
-            total=len(topics),
+            total=len(unique_topics),
             **get_tqdm_settings(f"{name}의 토픽 처리", COLORS["BLUE"], 1, True),
         ) as topic_bar:
-            for topic in topics:
+            for topic in unique_topics:
                 topic_bar.set_description(
                     f"{COLORS['CYAN']}토픽 '{topic}' 처리 중{COLORS['RESET']}"
                 )
@@ -828,6 +838,7 @@ class SubscriberManager:
         """
         수집된 뉴스에서 중복 항목을 제거하고, 각 토픽별로 최소 5개, 최대 7개의 뉴스가 확보되도록 보충
         그리고 각 비교 시 유사도 결과를 log에 출력함
+        토픽 간 중복 검사를 효율적으로 처리하기 위해 글로벌 캐시 활용
         """
         if not news_items or len(news_items) <= 1:
             return news_items
@@ -838,19 +849,47 @@ class SubscriberManager:
             topic = item.get("query", "기타")
             topic_groups.setdefault(topic, []).append(item)
 
-        # 각 토픽 내에서 덜 엄격한 기준으로 중복 제거
+        # 모든 뉴스 아이템의 고유 ID 생성 (URL이나 제목 기반)
+        news_id_map = {}
+        for item in news_items:
+            # 뉴스 아이템 식별자로 링크 사용
+            news_id = item.get("link", item.get("title", ""))
+            news_id_map[news_id] = item
+
+        # 각 토픽 내에서 중복 제거 (캐시 사용으로 중복 검사 최적화)
         cleaned_by_topic = {}
         for topic, items in topic_groups.items():
             logger.info(f"토픽 '{topic}' 내부 중복 제거 시작 (총 {len(items)}개)")
-            cleaned_by_topic[topic] = self.news_fetcher.filter_duplicate_news(
-                items, similarity_threshold=0.7
-            )
-            logger.info(f"토픽 '{topic}': {len(cleaned_by_topic[topic])}개 남음")
+            # 이미 처리된 아이템은 건너뛰기 위한 ID 세트
+            processed_ids = set()
+            unique_items = []
 
-        # 모든 토픽의 뉴스를 합치고 최종 중복 제거 (더 엄격한 기준)
+            for item in items:
+                item_id = item.get("link", item.get("title", ""))
+                if item_id in processed_ids:
+                    continue
+
+                unique_items.append(item)
+                processed_ids.add(item_id)
+
+            cleaned_items = self.news_fetcher.filter_duplicate_news(
+                unique_items, similarity_threshold=0.7
+            )
+            cleaned_by_topic[topic] = cleaned_items
+            logger.info(f"토픽 '{topic}': {len(cleaned_items)}개 남음")
+
+        # 모든 토픽의 뉴스를 합치되, 이미 추가된 링크/제목은 제외
         all_news = []
+        processed_ids = set()
+
         for items in cleaned_by_topic.values():
-            all_news.extend(items)
+            for item in items:
+                item_id = item.get("link", item.get("title", ""))
+                if item_id not in processed_ids:
+                    all_news.append(item)
+                    processed_ids.add(item_id)
+
+        # 최종 중복 제거에는 더 엄격한 기준 적용
         final_news = self.news_fetcher.filter_duplicate_news(
             all_news, similarity_threshold
         )
@@ -863,7 +902,17 @@ class SubscriberManager:
             if count_in_final < 5:
                 needed = 5 - count_in_final
                 logger.info(f"토픽 '{topic}'에 추가 {needed}개 뉴스 필요")
-                candidates = [item for item in items if item not in final_news]
+                # 아직 추가되지 않은 후보만 추가
+                candidates = []
+                for item in items:
+                    if item not in final_news:
+                        item_id = item.get("link", item.get("title", ""))
+                        if not any(
+                            i.get("link", "") == item_id
+                            or i.get("title", "") == item_id
+                            for i in final_news
+                        ):
+                            candidates.append(item)
                 final_news.extend(candidates[:needed])
 
         # 최종적으로 각 토픽은 최대 7개로 제한
@@ -908,11 +957,16 @@ class SubscriberManager:
         self.log_news_titles(deduped_news, prefix=f"{name} 최종 뉴스 목록")
 
         # 그룹화하여 토픽별 뉴스 리스트 구성
+        # 중복 토픽들을 모두 고려하여 각 토픽별로 적절한 뉴스를 배치
         topic_news = {}
         for item in deduped_news:
-            topic = item.get("query", "기타")
-            if topic in topics:
-                topic_news.setdefault(topic, []).append(item)
+            item_topic = item.get("query", "기타")
+            # 구독자의 모든 토픽에 대해 체크
+            for topic in topics:
+                # 뉴스 아이템의 쿼리와 토픽이 일치하면 해당 토픽에 추가
+                if topic == item_topic:
+                    topic_news.setdefault(topic, []).append(item)
+
         if not topic_news:
             logger.warning(f"{name}의 관심 토픽과 일치하는 뉴스가 없습니다.")
             return {
@@ -1028,6 +1082,19 @@ def main() -> None:
         if not subscribers:
             logger.error("구독자가 없습니다. subscribers.txt 파일을 확인하세요.")
             return
+
+        # 모든 구독자의 고유 토픽 목록 확인
+        all_topics = set()
+        for subscriber in subscribers:
+            topics = subscriber.get("topics", [])
+            all_topics.update(topics)
+        logger.info(
+            f"전체 {len(subscribers)}명 구독자, 고유 토픽 {len(all_topics)}개 발견"
+        )
+
+        # 토픽별 뉴스 캐시 구성 (한 토픽은 한 번만 처리)
+        topic_news_cache = {}
+
         with tqdm(
             total=len(subscribers),
             **get_tqdm_settings("전체 구독자 처리", COLORS["CYAN"], 0, True),
@@ -1045,10 +1112,44 @@ def main() -> None:
                     )
                     main_bar.update(1)
                     continue
+
                 logger.info(f"{name} 뉴스 수집 시작")
-                subscriber_news = subscriber_manager.fetch_news_for_subscriber(
-                    subscriber
-                )
+                # 이미 캐시된 토픽 뉴스가 있으면 재사용
+                cached_subscriber_news = []
+                topics_to_fetch = []
+
+                for topic in topics:
+                    if topic in topic_news_cache:
+                        logger.info(
+                            f"캐시에서 토픽 '{topic}'의 뉴스 {len(topic_news_cache[topic])}개 로드"
+                        )
+                        cached_subscriber_news.extend(topic_news_cache[topic])
+                    else:
+                        topics_to_fetch.append(topic)
+
+                # 캐시에 없는 토픽만 새로 처리
+                if topics_to_fetch:
+                    # 임시로 캐시에 없는 토픽만 담긴 구독자 객체 생성
+                    temp_subscriber = {
+                        "name": name,
+                        "email": email_addr,
+                        "topics": topics_to_fetch,
+                    }
+                    new_news = subscriber_manager.fetch_news_for_subscriber(
+                        temp_subscriber
+                    )
+
+                    # 처리된 새 뉴스를 토픽별로 캐시에 저장
+                    for item in new_news:
+                        topic = item.get("query", "기타")
+                        if topic in topics_to_fetch:
+                            topic_news_cache.setdefault(topic, []).append(item)
+
+                    cached_subscriber_news.extend(new_news)
+
+                # 전체 구독자 뉴스 (캐시 + 새로 가져온 뉴스)
+                subscriber_news = cached_subscriber_news
+
                 if subscriber_news:
                     logger.info(f"{name}의 뉴스 수집 완료: {len(subscriber_news)}개")
                     subscriber_manager.log_news_titles(
@@ -1074,7 +1175,75 @@ def main() -> None:
                     main_bar.set_postfix_str("뉴스: 0")
                 time.sleep(1)
                 main_bar.update(1)
+
+        # 토큰 사용량 및 API 통계 로그 출력
+        stats = news_fetcher.api_usage_stats
+
+        # 로그 파일에 통계 기록
+        logger.info("=" * 50)
+        logger.info("API 사용량 통계")
+        logger.info("=" * 50)
+        logger.info(f"총 API 호출 횟수: {stats['api_calls']}회")
+        logger.info(f"총 사용 토큰: {stats['total_tokens']:,}개")
+        logger.info(f"  - 프롬프트 토큰: {stats['prompt_tokens']:,}개")
+        logger.info(f"  - 응답 토큰: {stats['completion_tokens']:,}개")
+        logger.info(
+            f"총 비용: ${stats['total_cost_usd']:.4f} (약 ₩{stats['total_cost_krw']:.0f})"
+        )
+
+        # 모델별 사용량 출력
+        logger.info("-" * 50)
+        logger.info("모델별 사용량:")
+        for model, model_stats in stats["models"].items():
+            logger.info(f"  ▶ {model}:")
+            logger.info(f"    - API 호출: {model_stats['api_calls']}회")
+            logger.info(f"    - 총 토큰: {model_stats['total_tokens']:,}개")
+            logger.info(
+                f"    - 비용: ${model_stats['total_cost_usd']:.4f} (약 ₩{model_stats['total_cost_krw']:.0f})"
+            )
+
+        logger.info("=" * 50)
         logger.info("모든 구독자 처리 완료")
+
+        # 터미널에도 통계 출력
+        print("\n")
+        print(f"{COLORS['CYAN']}{'=' * 60}{COLORS['RESET']}")
+        print(f"{COLORS['CYAN']}💰 API 사용량 통계 요약{COLORS['RESET']}")
+        print(f"{COLORS['CYAN']}{'=' * 60}{COLORS['RESET']}")
+        print(
+            f"{COLORS['WHITE']}📊 총 API 호출: {COLORS['YELLOW']}{stats['api_calls']:,}회{COLORS['RESET']}"
+        )
+        print(
+            f"{COLORS['WHITE']}🔤 총 사용 토큰: {COLORS['YELLOW']}{stats['total_tokens']:,}개{COLORS['RESET']}"
+        )
+        print(
+            f"{COLORS['WHITE']}  - 입력 토큰: {COLORS['GREEN']}{stats['prompt_tokens']:,}개{COLORS['RESET']}"
+        )
+        print(
+            f"{COLORS['WHITE']}  - 출력 토큰: {COLORS['GREEN']}{stats['completion_tokens']:,}개{COLORS['RESET']}"
+        )
+        print(
+            f"{COLORS['WHITE']}💵 총 비용: {COLORS['MAGENTA']}${stats['total_cost_usd']:.4f} (약 ₩{stats['total_cost_krw']:.0f}){COLORS['RESET']}"
+        )
+
+        print(f"{COLORS['CYAN']}{'-' * 60}{COLORS['RESET']}")
+        print(f"{COLORS['CYAN']}📋 모델별 사용량:{COLORS['RESET']}")
+
+        for model, model_stats in stats["models"].items():
+            print(f"{COLORS['BLUE']}  ▶ {model}:{COLORS['RESET']}")
+            print(
+                f"{COLORS['WHITE']}    - API 호출: {COLORS['YELLOW']}{model_stats['api_calls']}회{COLORS['RESET']}"
+            )
+            print(
+                f"{COLORS['WHITE']}    - 총 토큰: {COLORS['YELLOW']}{model_stats['total_tokens']:,}개{COLORS['RESET']}"
+            )
+            print(
+                f"{COLORS['WHITE']}    - 비용: {COLORS['MAGENTA']}${model_stats['total_cost_usd']:.4f} (약 ₩{model_stats['total_cost_krw']:.0f}){COLORS['RESET']}"
+            )
+
+        print(f"{COLORS['CYAN']}{'=' * 60}{COLORS['RESET']}")
+        print(f"\n{COLORS['GREEN']}✅ 모든 처리가 완료되었습니다!{COLORS['RESET']}")
+
     except Exception as e:
         logger.error(f"메인 실행 중 오류 발생: {e}")
     finally:
