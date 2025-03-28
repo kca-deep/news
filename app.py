@@ -445,4 +445,6 @@ def edit_subscriber_web(id):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    # app:app는 app.py 파일의 Flask 인스턴스(app)를 의미
+    # gunicorn -w 4 -b 127.0.0.1:5000 app:app 로 구동
+    app.run(host="127.0.0.1", port=5000)
