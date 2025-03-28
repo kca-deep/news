@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 import colorama
+from collections import defaultdict
 
 # Google API 관련 모듈
 from google.oauth2.credentials import Credentials
@@ -91,10 +92,15 @@ class NewsFetcher:
             "api_calls": 0,
             "models": {},
         }
+        self.model_prices = {
+            "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+            "gpt-4o": {"input": 5.0, "output": 15.0},
+            "gpt-4": {"input": 10.0, "output": 30.0},
+            "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
+        }
 
     @staticmethod
     def preprocess_title(title: str) -> str:
-        """뉴스 제목 전처리: 불필요한 접미사와 특수문자 제거 후 소문자화"""
         title = re.sub(r"\s*[-–]\s*[\w\s]+$", "", title)
         title = re.sub(r"[^\w\s]", " ", title)
         title = re.sub(r"\s+", " ", title)
@@ -102,7 +108,6 @@ class NewsFetcher:
 
     @staticmethod
     def simple_jaccard_similarity(text1: str, text2: str) -> float:
-        """두 텍스트 간의 Jaccard 유사도를 계산"""
         prep1 = NewsFetcher.preprocess_title(text1)
         prep2 = NewsFetcher.preprocess_title(text2)
         tokens1, tokens2 = set(prep1.split()), set(prep2.split())
@@ -125,7 +130,6 @@ class NewsFetcher:
         usd_cost: float,
         krw_cost: float,
     ) -> None:
-        """API 사용량을 누적 기록"""
         stats = self.api_usage_stats
         stats["total_tokens"] += total_tokens
         stats["prompt_tokens"] += prompt_tokens
@@ -151,6 +155,26 @@ class NewsFetcher:
         model_stats["total_cost_krw"] += krw_cost
         model_stats["api_calls"] += 1
 
+    def _update_api_usage_from_result(self, result: dict, model: str) -> None:
+        if "usage" in result:
+            prompt_tokens = result["usage"].get("prompt_tokens", 0)
+            completion_tokens = result["usage"].get("completion_tokens", 0)
+            total_tokens = result["usage"].get("total_tokens", 0)
+            price_info = self.model_prices.get(model, {"input": 0.15, "output": 0.60})
+            input_cost = (prompt_tokens / 1_000_000) * price_info["input"]
+            output_cost = (completion_tokens / 1_000_000) * price_info["output"]
+            total_cost = input_cost + output_cost
+            exchange_rate = float(os.getenv("USD_TO_KRW", 1350))
+            krw_cost = total_cost * exchange_rate
+            self.track_api_usage(
+                model,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+                total_cost,
+                krw_cost,
+            )
+
     def get_google_news(
         self,
         query: str = "",
@@ -158,9 +182,6 @@ class NewsFetcher:
         language: str = "ko",
         max_items: int = 30,
     ) -> list:
-        """
-        Google News RSS를 사용해 최신 뉴스 기사를 검색 (최대 max_items개)
-        """
         cache_key = f"{query}_{country}_{language}"
         if cache_key in self.news_cache:
             logger.info(f"캐시에서 토픽 '{query}' 뉴스 로드")
@@ -245,9 +266,6 @@ class NewsFetcher:
             return []
 
     def get_article_content(self, url: str) -> tuple:
-        """
-        주어진 URL에서 기사 본문과 (있다면) 출처 정보를 추출
-        """
         try:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -298,9 +316,6 @@ class NewsFetcher:
             return "기사 내용을 가져오는 중 오류가 발생했습니다.", None
 
     def summarize_with_openai(self, title: str, text: str) -> str:
-        """
-        OpenAI API를 사용하여 기사 제목과 본문으로 300자 요약문을 생성
-        """
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             logger.error("OpenAI API 키가 설정되지 않았습니다.")
@@ -342,32 +357,7 @@ class NewsFetcher:
             if response.status_code == 200:
                 result = response.json()
                 summary = result["choices"][0]["message"]["content"].strip()
-                if "usage" in result:
-                    prompt_tokens = result["usage"].get("prompt_tokens", 0)
-                    completion_tokens = result["usage"].get("completion_tokens", 0)
-                    total_tokens = result["usage"].get("total_tokens", 0)
-                    model_prices = {
-                        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-                        "gpt-4o": {"input": 5.0, "output": 15.0},
-                        "gpt-4": {"input": 10.0, "output": 30.0},
-                        "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
-                    }
-                    price_info = model_prices.get(
-                        data["model"], {"input": 0.15, "output": 0.60}
-                    )
-                    input_cost = (prompt_tokens / 1_000_000) * price_info["input"]
-                    output_cost = (completion_tokens / 1_000_000) * price_info["output"]
-                    total_cost = input_cost + output_cost
-                    exchange_rate = float(os.getenv("USD_TO_KRW", 1350))
-                    krw_cost = total_cost * exchange_rate
-                    self.track_api_usage(
-                        data["model"],
-                        prompt_tokens,
-                        completion_tokens,
-                        total_tokens,
-                        total_cost,
-                        krw_cost,
-                    )
+                self._update_api_usage_from_result(result, data["model"])
                 return summary
             else:
                 logger.error(f"OpenAI API 오류: {response.status_code}")
@@ -377,9 +367,6 @@ class NewsFetcher:
             return "요약 생성 중 오류 발생."
 
     def process_news_item(self, item: dict) -> dict:
-        """
-        뉴스 항목 처리: 기사 본문 추출 및 OpenAI 요약 추가
-        """
         try:
             content, article_source = self.get_article_content(item["link"])
             if article_source and item["source"] == "Unknown":
@@ -391,9 +378,6 @@ class NewsFetcher:
             return item
 
     def calculate_similarity_with_openai(self, news1: dict, news2: dict) -> float:
-        """
-        두 뉴스 제목의 의미적 유사도를 OpenAI API를 통해 정밀 비교
-        """
         key = tuple(sorted([news1["title"], news2["title"]]))
         if key in self.similarity_cache:
             return self.similarity_cache[key]
@@ -456,34 +440,8 @@ class NewsFetcher:
                 match = re.search(r"(\d+\.\d{2}|\d+)", similarity_text)
                 similarity = float(match.group(1)) if match else 0.0
                 similarity = max(0.0, min(1.0, similarity))
-                if "usage" in result:
-                    prompt_tokens = result["usage"].get("prompt_tokens", 0)
-                    completion_tokens = result["usage"].get("completion_tokens", 0)
-                    total_tokens = result["usage"].get("total_tokens", 0)
-                    model_prices = {
-                        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-                        "gpt-4o": {"input": 5.0, "output": 15.0},
-                        "gpt-4": {"input": 10.0, "output": 30.0},
-                        "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
-                    }
-                    price_info = model_prices.get(
-                        data["model"], {"input": 0.15, "output": 0.60}
-                    )
-                    input_cost = (prompt_tokens / 1_000_000) * price_info["input"]
-                    output_cost = (completion_tokens / 1_000_000) * price_info["output"]
-                    total_cost = input_cost + output_cost
-                    exchange_rate = float(os.getenv("USD_TO_KRW", 1350))
-                    krw_cost = total_cost * exchange_rate
-                    self.track_api_usage(
-                        data["model"],
-                        prompt_tokens,
-                        completion_tokens,
-                        total_tokens,
-                        total_cost,
-                        krw_cost,
-                    )
+                self._update_api_usage_from_result(result, data["model"])
                 self.similarity_cache[key] = similarity
-                # AI 유사도 결과를 로그에 출력
                 logger.info(
                     f"비교: '{news1['title']}' vs '{news2['title']}' -> AI 유사도: {similarity:.2f}"
                 )
@@ -498,10 +456,6 @@ class NewsFetcher:
     def filter_duplicate_news(
         self, news_items: list, similarity_threshold: float = 0.7
     ) -> list:
-        """
-        단순 Jaccard 유사도와 AI 정밀 비교를 결합해 중복 뉴스 항목을 제거하며,
-        비교되는 기사 쌍마다 유사도를 로그에 출력합니다.
-        """
         if not news_items or len(news_items) <= 1:
             return news_items
 
@@ -764,17 +718,11 @@ class SubscriberManager:
             logger.info(f"{idx}. [{topic}] {item['title']}")
 
     def fetch_news_for_subscriber(self, subscriber: dict) -> list:
-        """
-        각 구독자의 관심 토픽에 대해 최대 30개의 최신 뉴스를 수집하고 처리
-        중복 토픽은 한 번만 처리하여 이중 유사도 검색을 방지
-        """
         collected_news = []
         topics = subscriber.get("topics", [])
-        # 중복 토픽 제거
         unique_topics = list(dict.fromkeys(topics))
         name = subscriber.get("name", "구독자")
 
-        # 토픽 중복이 있는 경우 로그에 기록
         if len(unique_topics) < len(topics):
             logger.info(
                 f"{name}의 토픽 목록에서 {len(topics) - len(unique_topics)}개 중복 제거됨"
@@ -796,17 +744,15 @@ class SubscriberManager:
                         unique_news = self.news_fetcher.filter_duplicate_news(
                             news_items, similarity_threshold=0.65
                         )
-                        # 중복 제거 후 최대 30개 뉴스 중 처리
-                        selected_news = unique_news
                         logger.info(
-                            f"토픽 '{topic}'에서 {len(selected_news)}개 고유 뉴스 선정"
+                            f"토픽 '{topic}'에서 {len(unique_news)}개 고유 뉴스 선정"
                         )
                         with ThreadPoolExecutor(max_workers=3) as executor:
                             futures = {
                                 executor.submit(
                                     self.news_fetcher.process_news_item, item
                                 ): item
-                                for item in selected_news
+                                for item in unique_news
                             }
                             with tqdm(
                                 total=len(futures),
@@ -835,53 +781,31 @@ class SubscriberManager:
     def remove_duplicates_from_news(
         self, news_items: list, similarity_threshold: float = 0.65
     ) -> list:
-        """
-        수집된 뉴스에서 중복 항목을 제거하고, 각 토픽별로 최소 5개, 최대 7개의 뉴스가 확보되도록 보충
-        그리고 각 비교 시 유사도 결과를 log에 출력함
-        토픽 간 중복 검사를 효율적으로 처리하기 위해 글로벌 캐시 활용
-        """
         if not news_items or len(news_items) <= 1:
             return news_items
 
-        # 토픽별 그룹화
-        topic_groups = {}
+        topic_groups = defaultdict(list)
         for item in news_items:
-            topic = item.get("query", "기타")
-            topic_groups.setdefault(topic, []).append(item)
+            topic_groups[item.get("query", "기타")].append(item)
 
-        # 모든 뉴스 아이템의 고유 ID 생성 (URL이나 제목 기반)
-        news_id_map = {}
-        for item in news_items:
-            # 뉴스 아이템 식별자로 링크 사용
-            news_id = item.get("link", item.get("title", ""))
-            news_id_map[news_id] = item
-
-        # 각 토픽 내에서 중복 제거 (캐시 사용으로 중복 검사 최적화)
         cleaned_by_topic = {}
         for topic, items in topic_groups.items():
             logger.info(f"토픽 '{topic}' 내부 중복 제거 시작 (총 {len(items)}개)")
-            # 이미 처리된 아이템은 건너뛰기 위한 ID 세트
-            processed_ids = set()
             unique_items = []
-
+            processed_ids = set()
             for item in items:
                 item_id = item.get("link", item.get("title", ""))
-                if item_id in processed_ids:
-                    continue
-
-                unique_items.append(item)
-                processed_ids.add(item_id)
-
+                if item_id not in processed_ids:
+                    unique_items.append(item)
+                    processed_ids.add(item_id)
             cleaned_items = self.news_fetcher.filter_duplicate_news(
                 unique_items, similarity_threshold=0.7
             )
             cleaned_by_topic[topic] = cleaned_items
             logger.info(f"토픽 '{topic}': {len(cleaned_items)}개 남음")
 
-        # 모든 토픽의 뉴스를 합치되, 이미 추가된 링크/제목은 제외
         all_news = []
         processed_ids = set()
-
         for items in cleaned_by_topic.values():
             for item in items:
                 item_id = item.get("link", item.get("title", ""))
@@ -889,12 +813,9 @@ class SubscriberManager:
                     all_news.append(item)
                     processed_ids.add(item_id)
 
-        # 최종 중복 제거에는 더 엄격한 기준 적용
         final_news = self.news_fetcher.filter_duplicate_news(
             all_news, similarity_threshold
         )
-
-        # 각 토픽별로 최소 5개 뉴스 확보 (부족 시 후보 추가)
         for topic, items in cleaned_by_topic.items():
             count_in_final = sum(
                 1 for item in final_news if item.get("query", "기타") == topic
@@ -902,30 +823,15 @@ class SubscriberManager:
             if count_in_final < 5:
                 needed = 5 - count_in_final
                 logger.info(f"토픽 '{topic}'에 추가 {needed}개 뉴스 필요")
-                # 아직 추가되지 않은 후보만 추가
-                candidates = []
-                for item in items:
-                    if item not in final_news:
-                        item_id = item.get("link", item.get("title", ""))
-                        if not any(
-                            i.get("link", "") == item_id
-                            or i.get("title", "") == item_id
-                            for i in final_news
-                        ):
-                            candidates.append(item)
+                candidates = [item for item in items if item not in final_news]
                 final_news.extend(candidates[:needed])
 
-        # 최종적으로 각 토픽은 최대 7개로 제한
-        topic_final = {}
+        topic_final = defaultdict(list)
         for item in final_news:
-            topic = item.get("query", "기타")
-            topic_final.setdefault(topic, []).append(item)
+            topic_final[item.get("query", "기타")].append(item)
         final_news_clipped = []
-        for topic, items in topic_final.items():
-            if len(items) > 7:
-                final_news_clipped.extend(items[:7])
-            else:
-                final_news_clipped.extend(items)
+        for items in topic_final.values():
+            final_news_clipped.extend(items[:7] if len(items) > 7 else items)
         logger.info(f"최종 뉴스 항목: {len(final_news_clipped)}개")
         return final_news_clipped
 
@@ -956,16 +862,11 @@ class SubscriberManager:
         )
         self.log_news_titles(deduped_news, prefix=f"{name} 최종 뉴스 목록")
 
-        # 그룹화하여 토픽별 뉴스 리스트 구성
-        # 중복 토픽들을 모두 고려하여 각 토픽별로 적절한 뉴스를 배치
-        topic_news = {}
+        topic_news = defaultdict(list)
         for item in deduped_news:
-            item_topic = item.get("query", "기타")
-            # 구독자의 모든 토픽에 대해 체크
             for topic in topics:
-                # 뉴스 아이템의 쿼리와 토픽이 일치하면 해당 토픽에 추가
-                if topic == item_topic:
-                    topic_news.setdefault(topic, []).append(item)
+                if topic == item.get("query", "기타"):
+                    topic_news[topic].append(item)
 
         if not topic_news:
             logger.warning(f"{name}의 관심 토픽과 일치하는 뉴스가 없습니다.")
@@ -976,10 +877,8 @@ class SubscriberManager:
                 "reason": "관심 뉴스 없음",
             }
 
-        # 각 토픽별로 출력되는 뉴스는 최대 7개만 사용 (최소 5개는 remove_duplicates에서 보충됨)
         for topic in topic_news:
-            if len(topic_news[topic]) > 7:
-                topic_news[topic] = topic_news[topic][:7]
+            topic_news[topic] = topic_news[topic][:7]
 
         current_date = datetime.now().strftime("%Y년 %m월 %d일")
         html_content = self.build_email_html(name, current_date, topic_news)
@@ -1083,7 +982,6 @@ def main() -> None:
             logger.error("구독자가 없습니다. subscribers.txt 파일을 확인하세요.")
             return
 
-        # 모든 구독자의 고유 토픽 목록 확인
         all_topics = set()
         for subscriber in subscribers:
             topics = subscriber.get("topics", [])
@@ -1092,7 +990,6 @@ def main() -> None:
             f"전체 {len(subscribers)}명 구독자, 고유 토픽 {len(all_topics)}개 발견"
         )
 
-        # 토픽별 뉴스 캐시 구성 (한 토픽은 한 번만 처리)
         topic_news_cache = {}
 
         with tqdm(
@@ -1114,10 +1011,8 @@ def main() -> None:
                     continue
 
                 logger.info(f"{name} 뉴스 수집 시작")
-                # 이미 캐시된 토픽 뉴스가 있으면 재사용
                 cached_subscriber_news = []
                 topics_to_fetch = []
-
                 for topic in topics:
                     if topic in topic_news_cache:
                         logger.info(
@@ -1127,9 +1022,7 @@ def main() -> None:
                     else:
                         topics_to_fetch.append(topic)
 
-                # 캐시에 없는 토픽만 새로 처리
                 if topics_to_fetch:
-                    # 임시로 캐시에 없는 토픽만 담긴 구독자 객체 생성
                     temp_subscriber = {
                         "name": name,
                         "email": email_addr,
@@ -1138,16 +1031,12 @@ def main() -> None:
                     new_news = subscriber_manager.fetch_news_for_subscriber(
                         temp_subscriber
                     )
-
-                    # 처리된 새 뉴스를 토픽별로 캐시에 저장
                     for item in new_news:
                         topic = item.get("query", "기타")
                         if topic in topics_to_fetch:
                             topic_news_cache.setdefault(topic, []).append(item)
-
                     cached_subscriber_news.extend(new_news)
 
-                # 전체 구독자 뉴스 (캐시 + 새로 가져온 뉴스)
                 subscriber_news = cached_subscriber_news
 
                 if subscriber_news:
@@ -1176,10 +1065,7 @@ def main() -> None:
                 time.sleep(1)
                 main_bar.update(1)
 
-        # 토큰 사용량 및 API 통계 로그 출력
         stats = news_fetcher.api_usage_stats
-
-        # 로그 파일에 통계 기록
         logger.info("=" * 50)
         logger.info("API 사용량 통계")
         logger.info("=" * 50)
@@ -1191,7 +1077,6 @@ def main() -> None:
             f"총 비용: ${stats['total_cost_usd']:.4f} (약 ₩{stats['total_cost_krw']:.0f})"
         )
 
-        # 모델별 사용량 출력
         logger.info("-" * 50)
         logger.info("모델별 사용량:")
         for model, model_stats in stats["models"].items():
@@ -1205,7 +1090,6 @@ def main() -> None:
         logger.info("=" * 50)
         logger.info("모든 구독자 처리 완료")
 
-        # 터미널에도 통계 출력
         print("\n")
         print(f"{COLORS['CYAN']}{'=' * 60}{COLORS['RESET']}")
         print(f"{COLORS['CYAN']}💰 API 사용량 통계 요약{COLORS['RESET']}")
@@ -1225,10 +1109,8 @@ def main() -> None:
         print(
             f"{COLORS['WHITE']}💵 총 비용: {COLORS['MAGENTA']}${stats['total_cost_usd']:.4f} (약 ₩{stats['total_cost_krw']:.0f}){COLORS['RESET']}"
         )
-
         print(f"{COLORS['CYAN']}{'-' * 60}{COLORS['RESET']}")
         print(f"{COLORS['CYAN']}📋 모델별 사용량:{COLORS['RESET']}")
-
         for model, model_stats in stats["models"].items():
             print(f"{COLORS['BLUE']}  ▶ {model}:{COLORS['RESET']}")
             print(
@@ -1240,7 +1122,6 @@ def main() -> None:
             print(
                 f"{COLORS['WHITE']}    - 비용: {COLORS['MAGENTA']}${model_stats['total_cost_usd']:.4f} (약 ₩{model_stats['total_cost_krw']:.0f}){COLORS['RESET']}"
             )
-
         print(f"{COLORS['CYAN']}{'=' * 60}{COLORS['RESET']}")
         print(f"\n{COLORS['GREEN']}✅ 모든 처리가 완료되었습니다!{COLORS['RESET']}")
 

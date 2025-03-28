@@ -9,6 +9,7 @@ import secrets
 import functools
 import datetime
 import uuid
+import re
 from flask import (
     Flask,
     render_template,
@@ -27,9 +28,9 @@ load_dotenv()
 
 # --- 로깅 설정 ---
 pathlib.Path("logs").mkdir(parents=True, exist_ok=True)
-log_file = f"logs/app.log"
+log_file = "logs/app.log"
 logging.basicConfig(
-    level=logging.WARNING,  # INFO에서 WARNING으로 변경하여 중요 로그만 기록
+    level=logging.DEBUG,  # DEBUG, INFO, WARNING, ERROR, CRITICAL 모두 기록
     handlers=[
         logging.FileHandler(log_file, mode="a", encoding="utf-8", errors="replace"),
     ],
@@ -38,60 +39,69 @@ logging.basicConfig(
 
 
 def log_to_file(message):
-    """중요 메시지만 기록하도록 WARNING 레벨 사용"""
+    """중요 메시지(경고 이상)만 기록"""
     logging.warning(message)
+
+
+# --- 파일 입출력 헬퍼 함수 ---
+def write_subscribers(subscribers, file_path="subscribers.txt"):
+    """구독자 목록을 지정 파일에 저장하는 함수."""
+    try:
+        with open(file_path, "w", encoding="utf-8", errors="replace") as f:
+            for i, subscriber in enumerate(subscribers):
+                if i > 0:
+                    f.write("\n")
+                f.write(f"ID: {subscriber['id']}\n")
+                f.write(f"이름: {subscriber['name']}\n")
+                f.write(f"이메일: {subscriber['email']}\n")
+                f.write(f"토픽: {subscriber['topics']}\n")
+    except Exception as e:
+        logging.error(f"구독자 파일 쓰기 오류: {e}")
 
 
 # --- 구독자 관리 함수 ---
 def load_subscribers(file_path="subscribers.txt"):
-    """텍스트 파일에서 구독자 정보를 로드하는 함수."""
+    """
+    텍스트 파일에서 구독자 정보를 로드하는 함수.
+    구독자 정보가 불완전한 경우 UUID를 생성하고, 파일 정리가 필요하면 파일을 다시 씁니다.
+    """
     subscribers = []
     file_needs_update = False
     needs_cleanup = False
 
     if not os.path.exists(file_path):
         return subscribers
+
     try:
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            current_subscriber = None
+            current_subscriber = {}
             for line in f:
                 line = line.strip()
                 if not line:
-                    if current_subscriber:
-                        # 빈 구독자 정보(이름과 이메일이 없는 경우)는 무시
-                        if current_subscriber.get("name") and current_subscriber.get(
-                            "email"
-                        ):
-                            # ID가 없는 경우에만 UUID 생성
-                            if (
-                                "id" not in current_subscriber
-                                or not current_subscriber["id"]
-                            ):
-                                current_subscriber["id"] = str(uuid.uuid4())
-                                file_needs_update = True
-                            subscribers.append(current_subscriber)
-                        else:
-                            # 빈 구독자 정보는 파일 정리 대상
-                            needs_cleanup = True
-                        current_subscriber = None
+                    # 빈 줄을 만난 경우, 하나의 구독자 정보 완성
+                    if current_subscriber.get("name") and current_subscriber.get(
+                        "email"
+                    ):
+                        if not current_subscriber.get("id"):
+                            current_subscriber["id"] = str(uuid.uuid4())
+                            file_needs_update = True
+                        subscribers.append(current_subscriber)
+                    else:
+                        needs_cleanup = True
+                    current_subscriber = {}
                     continue
 
                 if line.startswith("ID:"):
+                    # 이전 구독자 정보가 있다면 저장
                     if current_subscriber:
-                        # 빈 구독자 정보(이름과 이메일이 없는 경우)는 무시
                         if current_subscriber.get("name") and current_subscriber.get(
                             "email"
                         ):
-                            # ID가 없는 경우에만 UUID 생성
-                            if (
-                                "id" not in current_subscriber
-                                or not current_subscriber["id"]
-                            ):
+                            if not current_subscriber.get("id"):
                                 current_subscriber["id"] = str(uuid.uuid4())
                                 file_needs_update = True
                             subscribers.append(current_subscriber)
                         else:
-                            # 빈 구독자 정보는 파일 정리 대상
                             needs_cleanup = True
                     current_subscriber = {
                         "id": line[3:].strip(),
@@ -100,50 +110,28 @@ def load_subscribers(file_path="subscribers.txt"):
                         "topics": "",
                     }
                 elif line.startswith("이름:"):
-                    # 이름 줄 처리
-                    name_value = line[3:].strip()
-                    if not current_subscriber:
-                        # 이름으로 시작하는 첫 줄인 경우 (이전 형식 지원)
-                        current_subscriber = {
-                            "id": str(uuid.uuid4()),
-                            "name": name_value,
-                            "email": "",
-                            "topics": "",
-                        }
-                        file_needs_update = True
-                    else:
-                        # 이미 구독자 정보가 시작된 경우
-                        current_subscriber["name"] = name_value
-                elif current_subscriber:
-                    if line.startswith("이메일:"):
-                        current_subscriber["email"] = line[4:].strip()
-                    elif line.startswith("토픽:"):
-                        current_subscriber["topics"] = line[3:].strip()
+                    current_subscriber["name"] = line[3:].strip()
+                elif line.startswith("이메일:"):
+                    current_subscriber["email"] = line[4:].strip()
+                elif line.startswith("토픽:"):
+                    current_subscriber["topics"] = line[3:].strip()
 
             # 마지막 구독자 정보 처리
             if current_subscriber:
-                # 빈 구독자 정보(이름과 이메일이 없는 경우)는 무시
                 if current_subscriber.get("name") and current_subscriber.get("email"):
-                    if "id" not in current_subscriber or not current_subscriber["id"]:
+                    if not current_subscriber.get("id"):
                         current_subscriber["id"] = str(uuid.uuid4())
                         file_needs_update = True
                     subscribers.append(current_subscriber)
                 else:
-                    # 빈 구독자 정보는 파일 정리 대상
                     needs_cleanup = True
 
-        # 파일 정리 또는 업데이트 필요 시에만 파일 쓰기
+        # 파일 정리나 업데이트가 필요하면 다시 씁니다.
         if (needs_cleanup or file_needs_update) and subscribers:
-            with open(file_path, "w", encoding="utf-8", errors="replace") as f:
-                for i, subscriber in enumerate(subscribers):
-                    if i > 0:
-                        f.write("\n")
-                    f.write(f"ID: {subscriber['id']}\n")
-                    f.write(f"이름: {subscriber['name']}\n")
-                    f.write(f"이메일: {subscriber['email']}\n")
-                    f.write(f"토픽: {subscriber['topics']}\n")
+            write_subscribers(subscribers, file_path)
 
         return subscribers
+
     except Exception as e:
         log_to_file(f"구독자 정보 로드 오류: {e}")
         return []
@@ -153,25 +141,26 @@ def save_subscriber(name, email, topics, file_path="subscribers.txt"):
     """새 구독자 정보를 파일에 저장하는 함수."""
     try:
         subscribers = load_subscribers(file_path)
+        # 이미 등록된 이메일이 있는지 확인
         for subscriber in subscribers:
             if subscriber["email"] == email:
+                logging.info(f"구독자 추가 실패: 이미 등록된 이메일 - {email}")
                 return False
 
-        # UUID 생성
-        subscriber_id = str(uuid.uuid4())
-
-        with open(file_path, "a", encoding="utf-8", errors="replace") as f:
-            if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                f.write("\n")
-            f.write("\n")
-            f.write(f"ID: {subscriber_id}\n")
-            f.write(f"이름: {name}\n")
-            f.write(f"이메일: {email}\n")
-            f.write(f"토픽: {topics}\n")
-        log_to_file(f"구독자 추가: {name} ({email})")
+        # 새 구독자 추가 (UUID 생성)
+        new_subscriber = {
+            "id": str(uuid.uuid4()),
+            "name": name,
+            "email": email,
+            "topics": topics,
+        }
+        subscribers.append(new_subscriber)
+        write_subscribers(subscribers, file_path)
+        logging.info(f"구독자 추가: {name} ({email})")
         return True
+
     except Exception as e:
-        log_to_file(f"구독자 추가 오류: {e}")
+        logging.error(f"구독자 추가 오류: {e}")
         return False
 
 
@@ -179,25 +168,16 @@ def delete_subscriber_by_id(subscriber_id, file_path="subscribers.txt"):
     """파일에서 구독자 정보를 ID로 삭제하는 함수."""
     try:
         subscribers = load_subscribers(file_path)
-        new_subscribers = [
-            subscriber
-            for subscriber in subscribers
-            if subscriber["id"] != subscriber_id
-        ]
+        new_subscribers = [sub for sub in subscribers if sub["id"] != subscriber_id]
         if len(new_subscribers) == len(subscribers):
+            logging.info(f"구독자 삭제 실패: ID {subscriber_id}를 찾을 수 없습니다.")
             return False
-        with open(file_path, "w", encoding="utf-8", errors="replace") as f:
-            for i, subscriber in enumerate(new_subscribers):
-                if i > 0:
-                    f.write("\n")
-                f.write(f"ID: {subscriber['id']}\n")
-                f.write(f"이름: {subscriber['name']}\n")
-                f.write(f"이메일: {subscriber['email']}\n")
-                f.write(f"토픽: {subscriber['topics']}\n")
-        log_to_file(f"구독자 삭제: ID {subscriber_id}")
+        write_subscribers(new_subscribers, file_path)
+        logging.info(f"구독자 삭제: ID {subscriber_id}")
         return True
+
     except Exception as e:
-        log_to_file(f"구독자 삭제 오류: {e}")
+        logging.error(f"구독자 삭제 오류: {e}")
         return False
 
 
@@ -213,11 +193,12 @@ def update_subscriber_by_id(
             if subscriber["id"] == subscriber_id:
                 # 이메일 변경 시 중복 검사
                 if subscriber["email"] != email:
-                    for other in subscribers:
-                        if other["id"] != subscriber_id and other["email"] == email:
-                            return False, "이미 존재하는 이메일입니다."
-
-                # 구독자 정보 업데이트
+                    if any(
+                        other["email"] == email
+                        for other in subscribers
+                        if other["id"] != subscriber_id
+                    ):
+                        return False, "이미 존재하는 이메일입니다."
                 subscriber["name"] = name
                 subscriber["email"] = email
                 subscriber["topics"] = topics
@@ -227,64 +208,41 @@ def update_subscriber_by_id(
         if not updated:
             return False, "구독자를 찾을 수 없습니다."
 
-        # 파일에 저장
-        with open(file_path, "w", encoding="utf-8", errors="replace") as f:
-            for i, subscriber in enumerate(subscribers):
-                if i > 0:
-                    f.write("\n")
-                f.write(f"ID: {subscriber['id']}\n")
-                f.write(f"이름: {subscriber['name']}\n")
-                f.write(f"이메일: {subscriber['email']}\n")
-                f.write(f"토픽: {subscriber['topics']}\n")
-
-        log_to_file(
+        write_subscribers(subscribers, file_path)
+        logging.info(
             f"구독자 정보 수정: ID {subscriber_id}, 이름: {name}, 이메일: {email}"
         )
         return True, ""
     except Exception as e:
-        log_to_file(f"구독자 정보 수정 오류: {e}")
+        logging.error(f"구독자 정보 수정 오류: {e}")
         return False, f"수정 중 오류 발생: {e}"
 
 
-# 이전 버전 지원을 위한 함수
-def delete_subscriber(email, file_path="subscribers.txt"):
-    """파일에서 구독자 정보를 이메일로 삭제하는 함수 (하위 호환성용)."""
-    try:
-        subscribers = load_subscribers(file_path)
-        # 이메일로 구독자 ID 찾기
-        for subscriber in subscribers:
-            if subscriber["email"] == email:
-                return delete_subscriber_by_id(subscriber["id"], file_path)
-        log_to_file(f"삭제할 구독자를 찾을 수 없습니다: {email}")
-        return False
-    except Exception as e:
-        log_to_file(f"구독자 삭제 오류: {e}")
-        return False
+def is_valid_email(email):
+    """이메일 형식이 유효한지 확인하는 함수."""
+    email_regex = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+    return re.match(email_regex, email) is not None
 
 
-# --- 비밀번호 해싱 함수 ---
+# --- 비밀번호 해싱 관련 함수 ---
 def hash_password(password):
-    """비밀번호를 bcrypt로 해싱하는 함수"""
-    # 비밀번호를 바이트로 인코딩
+    """비밀번호를 bcrypt로 해싱하는 함수."""
     password_bytes = password.encode("utf-8")
-    # 솔트 생성 및 해싱
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password_bytes, salt)
-    return hashed.decode("utf-8")  # 문자열로 변환하여 반환
+    return hashed.decode("utf-8")
 
 
 def check_password(plain_password, hashed_password):
-    """해시된 비밀번호와 일반 텍스트 비밀번호가 일치하는지 확인하는 함수"""
-    # 문자열 비밀번호를 바이트로 변환
+    """해시된 비밀번호와 일반 텍스트 비밀번호가 일치하는지 확인하는 함수."""
     plain_bytes = plain_password.encode("utf-8")
     hashed_bytes = hashed_password.encode("utf-8")
-    # 비밀번호 확인
     return bcrypt.checkpw(plain_bytes, hashed_bytes)
 
 
 # --- 세션 필요 데코레이터 ---
 def login_required(func):
-    """로그인이 필요한 라우트에 적용할 데코레이터"""
+    """로그인이 필요한 라우트에 적용할 데코레이터."""
 
     @functools.wraps(func)
     def decorated_function(*args, **kwargs):
@@ -298,14 +256,11 @@ def login_required(func):
 
 # --- Flask 웹 인터페이스 ---
 app = Flask(__name__)
-# 강력한 secret_key 사용
 app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(32))
-# CSRF 보호 설정
 csrf = CSRFProtect(app)
-# 해시된 비밀번호 사용
-ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
 
-# 해시된 비밀번호가 없는 경우 .env의 일반 텍스트 비밀번호를 해싱하여 사용
+# 관리자 비밀번호 설정 (해시된 값 사용)
+ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
 if not ADMIN_PASSWORD_HASH:
     ADMIN_PASSWORD_HASH = hash_password(os.getenv("ADMIN_PASSWORD", "admin123"))
     log_to_file(
@@ -313,12 +268,11 @@ if not ADMIN_PASSWORD_HASH:
     )
 
 
-# 세션 설정 향상
 @app.before_request
 def make_session_permanent():
-    """세션 설정을 향상시키는 함수"""
-    session.permanent = True  # 영구 세션 활성화
-    app.permanent_session_lifetime = 1800  # 세션 유효기간 30분으로 설정
+    """세션을 영구적으로 설정하고 30분 후 만료하도록 구성."""
+    session.permanent = True
+    app.permanent_session_lifetime = datetime.timedelta(minutes=30)
 
 
 @app.route("/")
@@ -332,24 +286,21 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        # 사용자 ID가 kca인지 확인
         expected_username = os.getenv("ADMIN_USERNAME", "kca")
         if username != expected_username:
             flash("로그인 정보가 올바르지 않습니다.")
             log_to_file(f"로그인 실패: 잘못된 사용자 ID - {username}")
             return render_template("login.html")
 
-        # 해시된 비밀번호와 비교
         if check_password(password, ADMIN_PASSWORD_HASH):
             session["logged_in"] = True
             session["username"] = username
-            session["login_time"] = secrets.token_hex(16)  # 세션 고유성 부여
+            session["login_time"] = datetime.datetime.now().isoformat()
             log_to_file(f"로그인 성공: {username}")
             return redirect(url_for("list_subscriber_web"))
         else:
             flash("로그인 정보가 올바르지 않습니다.")
             log_to_file("로그인 실패: 패스워드 불일치")
-    # CSRF 토큰을 템플릿에 제공
     return render_template("login.html")
 
 
@@ -362,6 +313,8 @@ def add_subscriber_web():
         topics = request.form.get("topics")
         if not name or not email or not topics:
             flash("모든 항목을 입력해주세요.")
+        elif not is_valid_email(email):
+            flash("유효하지 않은 이메일 형식입니다.")
         else:
             if save_subscriber(name, email, topics):
                 flash("구독자 추가에 성공했습니다.")
@@ -372,7 +325,7 @@ def add_subscriber_web():
 
 @app.route("/logout")
 def logout():
-    session.clear()  # 모든 세션 데이터 삭제
+    session.clear()
     flash("로그아웃 되었습니다.")
     return redirect(url_for("login"))
 
@@ -381,14 +334,12 @@ def logout():
 @login_required
 def list_subscriber_web():
     subs = load_subscribers()
-    # 현재 시간 포맷
     update_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return render_template(
         "list_subscribers.html", subscribers=subs, update_time=update_time
     )
 
 
-# 구독자 삭제 라우트 (ID 기반)
 @app.route("/delete_subscriber/<id>", methods=["GET", "POST"])
 @login_required
 def delete_subscriber_web(id):
@@ -399,7 +350,6 @@ def delete_subscriber_web(id):
             flash("구독자 삭제에 실패했습니다.")
     else:
         flash("삭제는 POST 요청으로만 가능합니다.")
-
     return redirect(url_for("list_subscriber_web"))
 
 
@@ -407,13 +357,7 @@ def delete_subscriber_web(id):
 @login_required
 def edit_subscriber_web(id):
     subscribers = load_subscribers()
-    subscriber = None
-
-    # 구독자 찾기
-    for sub in subscribers:
-        if sub["id"] == id:
-            subscriber = sub
-            break
+    subscriber = next((sub for sub in subscribers if sub["id"] == id), None)
 
     if not subscriber:
         flash("구독자를 찾을 수 없습니다.")
@@ -423,9 +367,10 @@ def edit_subscriber_web(id):
         name = request.form.get("name")
         email = request.form.get("email")
         topics = request.form.get("topics")
-
         if not name or not email or not topics:
             flash("모든 항목을 입력해주세요.")
+        elif not is_valid_email(email):
+            flash("유효하지 않은 이메일 형식입니다.")
         else:
             success, message = update_subscriber_by_id(id, name, email, topics)
             if success:
@@ -434,7 +379,6 @@ def edit_subscriber_web(id):
             else:
                 flash(message)
 
-    # 토픽 목록을 문자열로 변환
     topics_str = subscriber.get("topics", "")
     if isinstance(topics_str, list):
         topics_str = ", ".join(topics_str)
@@ -445,6 +389,5 @@ def edit_subscriber_web(id):
 
 
 if __name__ == "__main__":
-    # app:app는 app.py 파일의 Flask 인스턴스(app)를 의미
-    # gunicorn -w 4 -b 127.0.0.1:5000 app:app 로 구동
+    # gunicorn 등으로 구동 시 app:app를 사용
     app.run(host="127.0.0.1", port=5000)
