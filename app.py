@@ -10,6 +10,7 @@ import functools
 import datetime
 import uuid
 import re
+import binascii
 from flask import (
     Flask,
     render_template,
@@ -19,9 +20,12 @@ from flask import (
     session,
     flash,
     jsonify,
+    abort,
+    get_flashed_messages,
 )
 from flask_wtf.csrf import CSRFProtect
 from dotenv import load_dotenv
+from datetime import timedelta
 
 # .env 파일 로드
 load_dotenv()
@@ -54,7 +58,16 @@ def write_subscribers(subscribers, file_path="subscribers.txt"):
                 f.write(f"ID: {subscriber['id']}\n")
                 f.write(f"이름: {subscriber['name']}\n")
                 f.write(f"이메일: {subscriber['email']}\n")
-                f.write(f"토픽: {subscriber['topics']}\n")
+
+                # 토픽 리스트를 쉼표로 구분된 문자열로 변환하여 저장
+                topics = subscriber.get("topics", [])
+                if isinstance(topics, list):
+                    topics_str = ", ".join(topics)
+                else:
+                    # 이미 문자열인 경우 그대로 사용
+                    topics_str = str(topics)
+
+                f.write(f"토픽: {topics_str}\n")
     except Exception as e:
         logging.error(f"구독자 파일 쓰기 오류: {e}")
 
@@ -85,6 +98,36 @@ def load_subscribers(file_path="subscribers.txt"):
                         if not current_subscriber.get("id"):
                             current_subscriber["id"] = str(uuid.uuid4())
                             file_needs_update = True
+
+                        # 토픽 문자열을 일관된 리스트 형식으로 변환
+                        topics = current_subscriber.get("topics", "")
+                        # 문자열이 리스트 형식으로 저장되어 있는 경우 처리 (예: "['AI', 'MCP']")
+                        if isinstance(topics, str):
+                            if topics.startswith("[") and topics.endswith("]"):
+                                try:
+                                    # 문자열로 된 리스트를 실제 리스트로 변환
+                                    topics = eval(topics)
+                                except:
+                                    # 변환 실패 시 쉼표로 구분
+                                    topics = [
+                                        t.strip()
+                                        for t in topics.replace("[", "")
+                                        .replace("]", "")
+                                        .replace("'", "")
+                                        .split(",")
+                                        if t.strip()
+                                    ]
+                            else:
+                                # 일반 문자열은 쉼표로 구분하여 리스트로 변환
+                                topics = [
+                                    t.strip() for t in topics.split(",") if t.strip()
+                                ]
+
+                        # 빈 리스트가 아니면 업데이트
+                        if topics:
+                            current_subscriber["topics"] = topics
+                            file_needs_update = True
+
                         subscribers.append(current_subscriber)
                     else:
                         needs_cleanup = True
@@ -100,6 +143,38 @@ def load_subscribers(file_path="subscribers.txt"):
                             if not current_subscriber.get("id"):
                                 current_subscriber["id"] = str(uuid.uuid4())
                                 file_needs_update = True
+
+                            # 토픽 문자열을 일관된 리스트 형식으로 변환
+                            topics = current_subscriber.get("topics", "")
+                            # 문자열이 리스트 형식으로 저장되어 있는 경우 처리 (예: "['AI', 'MCP']")
+                            if isinstance(topics, str):
+                                if topics.startswith("[") and topics.endswith("]"):
+                                    try:
+                                        # 문자열로 된 리스트를 실제 리스트로 변환
+                                        topics = eval(topics)
+                                    except:
+                                        # 변환 실패 시 쉼표로 구분
+                                        topics = [
+                                            t.strip()
+                                            for t in topics.replace("[", "")
+                                            .replace("]", "")
+                                            .replace("'", "")
+                                            .split(",")
+                                            if t.strip()
+                                        ]
+                                else:
+                                    # 일반 문자열은 쉼표로 구분하여 리스트로 변환
+                                    topics = [
+                                        t.strip()
+                                        for t in topics.split(",")
+                                        if t.strip()
+                                    ]
+
+                            # 빈 리스트가 아니면 업데이트
+                            if topics:
+                                current_subscriber["topics"] = topics
+                                file_needs_update = True
+
                             subscribers.append(current_subscriber)
                         else:
                             needs_cleanup = True
@@ -107,14 +182,34 @@ def load_subscribers(file_path="subscribers.txt"):
                         "id": line[3:].strip(),
                         "name": "",
                         "email": "",
-                        "topics": "",
+                        "topics": [],
                     }
                 elif line.startswith("이름:"):
                     current_subscriber["name"] = line[3:].strip()
                 elif line.startswith("이메일:"):
                     current_subscriber["email"] = line[4:].strip()
                 elif line.startswith("토픽:"):
-                    current_subscriber["topics"] = line[3:].strip()
+                    topics_str = line[3:].strip()
+                    # 문자열이 리스트 형식으로 저장되어 있는 경우 처리 (예: "['AI', 'MCP']")
+                    if topics_str.startswith("[") and topics_str.endswith("]"):
+                        try:
+                            # 문자열로 된 리스트를 실제 리스트로 변환
+                            topics = eval(topics_str)
+                        except:
+                            # 변환 실패 시 쉼표로 구분
+                            topics = [
+                                t.strip()
+                                for t in topics_str.replace("[", "")
+                                .replace("]", "")
+                                .replace("'", "")
+                                .split(",")
+                                if t.strip()
+                            ]
+                    else:
+                        # 일반 문자열은 쉼표로 구분하여 리스트로 변환
+                        topics = [t.strip() for t in topics_str.split(",") if t.strip()]
+
+                    current_subscriber["topics"] = topics
 
             # 마지막 구독자 정보 처리
             if current_subscriber:
@@ -122,6 +217,34 @@ def load_subscribers(file_path="subscribers.txt"):
                     if not current_subscriber.get("id"):
                         current_subscriber["id"] = str(uuid.uuid4())
                         file_needs_update = True
+
+                    # 토픽 문자열을 일관된 리스트 형식으로 변환
+                    topics = current_subscriber.get("topics", "")
+                    # 문자열이 리스트 형식으로 저장되어 있는 경우 처리 (예: "['AI', 'MCP']")
+                    if isinstance(topics, str):
+                        if topics.startswith("[") and topics.endswith("]"):
+                            try:
+                                # 문자열로 된 리스트를 실제 리스트로 변환
+                                topics = eval(topics)
+                            except:
+                                # 변환 실패 시 쉼표로 구분
+                                topics = [
+                                    t.strip()
+                                    for t in topics.replace("[", "")
+                                    .replace("]", "")
+                                    .replace("'", "")
+                                    .split(",")
+                                    if t.strip()
+                                ]
+                        else:
+                            # 일반 문자열은 쉼표로 구분하여 리스트로 변환
+                            topics = [t.strip() for t in topics.split(",") if t.strip()]
+
+                    # 빈 리스트가 아니면 업데이트
+                    if topics:
+                        current_subscriber["topics"] = topics
+                        file_needs_update = True
+
                     subscribers.append(current_subscriber)
                 else:
                     needs_cleanup = True
@@ -254,138 +377,261 @@ def login_required(func):
     return decorated_function
 
 
-# --- Flask 웹 인터페이스 ---
+# Flask 웹앱 설정
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(32))
-csrf = CSRFProtect(app)
+app.secret_key = os.environ.get("SECRET_KEY", "kca-newsletter-secret-key")
 
-# 관리자 비밀번호 설정 (해시된 값 사용)
-ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
-if not ADMIN_PASSWORD_HASH:
-    ADMIN_PASSWORD_HASH = hash_password(os.getenv("ADMIN_PASSWORD", "admin123"))
-    log_to_file(
-        "비밀번호가 해시되어 사용됩니다. .env 파일을 업데이트하는 것을 권장합니다."
-    )
+
+# CSRF 보호
+@app.before_request
+def csrf_protect():
+    if request.method == "POST":
+        # 로그인 페이지에 대한 POST 요청은 CSRF 검증을 건너뜁니다.
+        if request.path == "/login" or request.path == "/":
+            return
+        token = session.get("csrf_token")
+        if not token or token != request.form.get("csrf_token"):
+            abort(403)
 
 
 @app.before_request
 def make_session_permanent():
-    """세션을 영구적으로 설정하고 30분 후 만료하도록 구성."""
     session.permanent = True
-    app.permanent_session_lifetime = datetime.timedelta(minutes=30)
+    app.permanent_session_lifetime = timedelta(hours=1)
 
 
-@app.route("/")
-def index():
-    return redirect(url_for("login"))
+# CSRF 토큰 생성
+@app.context_processor
+def inject_csrf_token():
+    if "csrf_token" not in session:
+        session["csrf_token"] = binascii.hexlify(os.urandom(16)).decode()
+    return dict(csrf_token=session["csrf_token"])
 
 
+# 웹 라우트: 로그인
+@app.route("/", methods=["GET", "POST"])
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    # POST 요청 처리 (로그인 시도)
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
 
-        expected_username = os.getenv("ADMIN_USERNAME", "kca")
-        if username != expected_username:
-            flash("로그인 정보가 올바르지 않습니다.")
-            log_to_file(f"로그인 실패: 잘못된 사용자 ID - {username}")
-            return render_template("login.html")
-
-        if check_password(password, ADMIN_PASSWORD_HASH):
+        if username == "kca" and password == "admin123":
             session["logged_in"] = True
             session["username"] = username
             session["login_time"] = datetime.datetime.now().isoformat()
-            log_to_file(f"로그인 성공: {username}")
-            return redirect(url_for("list_subscriber_web"))
+            log_to_file(f"관리자 로그인 성공: {username}")
+            return redirect(url_for("list_subscribers"))
         else:
-            flash("로그인 정보가 올바르지 않습니다.")
-            log_to_file("로그인 실패: 패스워드 불일치")
+            flash(
+                "로그인에 실패했습니다. 사용자 이름과 비밀번호를 확인하세요.", "error"
+            )
+            log_to_file(f"로그인 실패 시도: {username}")
+
+    # 이미 로그인되어 있으면 구독자 목록으로 리디렉션
+    if "logged_in" in session:
+        return redirect(url_for("list_subscribers"))
+
+    # GET 요청 시 로그인 페이지 표시
     return render_template("login.html")
 
 
-@app.route("/add_subscriber_web", methods=["GET", "POST"])
-@login_required
-def add_subscriber_web():
-    if request.method == "POST":
-        name = request.form.get("name")
-        email = request.form.get("email")
-        topics = request.form.get("topics")
-        if not name or not email or not topics:
-            flash("모든 항목을 입력해주세요.")
-        elif not is_valid_email(email):
-            flash("유효하지 않은 이메일 형식입니다.")
-        else:
-            if save_subscriber(name, email, topics):
-                flash("구독자 추가에 성공했습니다.")
-            else:
-                flash("구독자 추가에 실패했습니다. (이미 등록된 이메일일 수 있습니다.)")
-    return render_template("add_subscriber.html")
-
-
+# 웹 라우트: 로그아웃
 @app.route("/logout")
 def logout():
-    session.clear()
-    flash("로그아웃 되었습니다.")
+    session.pop("logged_in", None)
+    flash("로그아웃되었습니다.", "success")
     return redirect(url_for("login"))
 
 
-@app.route("/list_subscribers")
-@login_required
-def list_subscriber_web():
-    subs = load_subscribers()
-    update_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return render_template(
-        "list_subscribers.html", subscribers=subs, update_time=update_time
-    )
+@app.route("/subscribers", methods=["GET"])
+def list_subscribers():
+    # 로그인 확인
+    if "logged_in" not in session:
+        return redirect(url_for("login"))
 
+    # 검색어와 토픽 필터 처리
+    search_query = request.args.get("search", "").strip().lower()
+    topic_filter = request.args.get("topic", "").strip().lower()
 
-@app.route("/delete_subscriber/<id>", methods=["GET", "POST"])
-@login_required
-def delete_subscriber_web(id):
-    if request.method == "POST":
-        if delete_subscriber_by_id(id):
-            flash("구독자가 성공적으로 삭제되었습니다.")
-        else:
-            flash("구독자 삭제에 실패했습니다.")
-    else:
-        flash("삭제는 POST 요청으로만 가능합니다.")
-    return redirect(url_for("list_subscriber_web"))
-
-
-@app.route("/edit_subscriber/<id>", methods=["GET", "POST"])
-@login_required
-def edit_subscriber_web(id):
+    # 구독자 목록 가져오기
     subscribers = load_subscribers()
-    subscriber = next((sub for sub in subscribers if sub["id"] == id), None)
 
-    if not subscriber:
-        flash("구독자를 찾을 수 없습니다.")
-        return redirect(url_for("list_subscriber_web"))
+    # 모든 토픽 추출
+    all_topics = set()
+    for subscriber in subscribers:
+        all_topics.update(subscriber.get("topics", []))
+    all_topics = sorted(list(all_topics))
 
-    if request.method == "POST":
-        name = request.form.get("name")
-        email = request.form.get("email")
-        topics = request.form.get("topics")
-        if not name or not email or not topics:
-            flash("모든 항목을 입력해주세요.")
-        elif not is_valid_email(email):
-            flash("유효하지 않은 이메일 형식입니다.")
-        else:
-            success, message = update_subscriber_by_id(id, name, email, topics)
-            if success:
-                flash("구독자 정보가 성공적으로 수정되었습니다.")
-                return redirect(url_for("list_subscriber_web"))
-            else:
-                flash(message)
+    # 검색어에 따른 필터링
+    if search_query:
+        filtered_subscribers = []
+        for subscriber in subscribers:
+            if (
+                search_query in subscriber["name"].lower()
+                or search_query in subscriber["email"].lower()
+            ):
+                filtered_subscribers.append(subscriber)
+        subscribers = filtered_subscribers
 
-    topics_str = subscriber.get("topics", "")
-    if isinstance(topics_str, list):
-        topics_str = ", ".join(topics_str)
+    # 토픽에 따른 필터링
+    if topic_filter:
+        filtered_subscribers = []
+        for subscriber in subscribers:
+            if topic_filter in [t.lower() for t in subscriber.get("topics", [])]:
+                filtered_subscribers.append(subscriber)
+        subscribers = filtered_subscribers
 
+    log_to_file(f"구독자 목록 조회: {len(subscribers)}명")
     return render_template(
-        "edit_subscriber.html", subscriber=subscriber, topics=topics_str
+        "list_subscribers.html",
+        subscribers=subscribers,
+        all_topics=all_topics,
+        request=request,
     )
+
+
+@app.route("/subscribers/add", methods=["GET", "POST"])
+def add_subscriber():
+    # 로그인 확인
+    if "logged_in" not in session:
+        return redirect(url_for("login"))
+
+    # CSRF 보호
+    csrf = request.form.get("csrf_token")
+    if request.method == "POST" and csrf and csrf == session.get("csrf_token"):
+        # 폼 데이터 가져오기
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip()
+        topics_str = request.form.get("topics", "").strip()
+
+        # 토픽을 쉼표로 분리하여 리스트로 변환
+        topics = [topic.strip() for topic in topics_str.split(",") if topic.strip()]
+
+        # 이메일 형식 확인
+        if not is_valid_email(email):
+            flash("유효하지 않은 이메일 형식입니다.", "error")
+            return render_template("subscriber_form.html", mode="add")
+
+        # 구독자 ID 생성
+        subscriber_id = str(uuid.uuid4())
+
+        # 새 구독자 정보 생성
+        new_subscriber = {
+            "id": subscriber_id,
+            "name": name,
+            "email": email,
+            "topics": topics,
+            "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+        # 구독자 목록에 추가
+        subscribers = load_subscribers()
+        subscribers.append(new_subscriber)
+        write_subscribers(subscribers)
+
+        # 로그 기록
+        log_to_file(f"구독자 추가: {name} ({email})")
+
+        flash("구독자가 성공적으로 추가되었습니다.", "success")
+        return redirect(url_for("list_subscribers"))
+
+    # GET 요청 시 폼 표시
+    return render_template("subscriber_form.html", mode="add")
+
+
+@app.route("/subscribers/edit/<subscriber_id>", methods=["GET", "POST"])
+def edit_subscriber(subscriber_id):
+    # 로그인 확인
+    if "logged_in" not in session:
+        return redirect(url_for("login"))
+
+    # 구독자 정보 가져오기
+    subscribers = load_subscribers()
+    subscriber = None
+    for s in subscribers:
+        if s.get("id") == subscriber_id:
+            subscriber = s
+            break
+
+    # 구독자가 존재하지 않는 경우
+    if not subscriber:
+        flash("구독자를 찾을 수 없습니다.", "error")
+        return redirect(url_for("list_subscribers"))
+
+    # POST 요청 처리 (구독자 정보 업데이트)
+    csrf = request.form.get("csrf_token")
+    if request.method == "POST" and csrf and csrf == session.get("csrf_token"):
+        # 폼 데이터 가져오기
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip()
+        topics_str = request.form.get("topics", "").strip()
+
+        # 토픽을 쉼표로 분리하여 리스트로 변환
+        topics = [topic.strip() for topic in topics_str.split(",") if topic.strip()]
+
+        # 이메일 형식 확인
+        if not is_valid_email(email):
+            flash("유효하지 않은 이메일 형식입니다.", "error")
+            return render_template(
+                "subscriber_form.html", mode="edit", subscriber=subscriber
+            )
+
+        # 구독자 정보 업데이트
+        for s in subscribers:
+            if s.get("id") == subscriber_id:
+                s["name"] = name
+                s["email"] = email
+                s["topics"] = topics
+                s["updated_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                break
+
+        # 변경사항 저장
+        write_subscribers(subscribers)
+
+        # 로그 기록
+        log_to_file(f"구독자 정보 수정: {name} ({email})")
+
+        flash("구독자 정보가 성공적으로 업데이트되었습니다.", "success")
+        return redirect(url_for("list_subscribers"))
+
+    # GET 요청 시 폼에 기존 정보 표시
+    return render_template("subscriber_form.html", mode="edit", subscriber=subscriber)
+
+
+@app.route("/subscribers/delete/<subscriber_id>")
+def delete_subscriber(subscriber_id):
+    # 로그인 확인
+    if "logged_in" not in session:
+        return redirect(url_for("login"))
+
+    # 구독자 목록 가져오기
+    subscribers = load_subscribers()
+
+    # 해당 ID의 구독자 찾기
+    subscriber_to_delete = None
+    for subscriber in subscribers:
+        if subscriber.get("id") == subscriber_id:
+            subscriber_to_delete = subscriber
+            break
+
+    # 구독자가 존재하지 않는 경우
+    if not subscriber_to_delete:
+        flash("구독자를 찾을 수 없습니다.", "error")
+        return redirect(url_for("list_subscribers"))
+
+    # 구독자 삭제
+    subscribers.remove(subscriber_to_delete)
+    write_subscribers(subscribers)
+
+    # 로그 기록
+    log_to_file(
+        f"구독자 삭제: {subscriber_to_delete.get('name')} ({subscriber_to_delete.get('email')})"
+    )
+
+    flash("구독자가 성공적으로 삭제되었습니다.", "success")
+    return redirect(url_for("list_subscribers"))
 
 
 if __name__ == "__main__":

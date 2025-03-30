@@ -1,27 +1,22 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" class="dark">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}KCA 뉴스레터 관리{% endblock %}</title>
     
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Google Fonts: Noto Sans KR -->
+    <!-- Google Fonts -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap">
     
-    <!-- Inter Font for UI -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <!-- Tailwind CSS - 최신 버전 CDN -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"></script>
     
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
-    
-    <!-- Neumorphic CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/neumorphic.css') }}">
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
     
     <script>
       tailwind.config = {
+        darkMode: 'class',
         theme: {
           container: {
             center: true,
@@ -32,38 +27,34 @@
           },
           extend: {
             colors: {
-              border: "hsl(var(--border))",
-              input: "hsl(var(--input))",
-              ring: "hsl(var(--ring))",
-              background: "hsl(var(--background))",
-              foreground: "hsl(var(--foreground))",
+              border: "var(--border)",
+              input: "var(--input)",
+              ring: "var(--ring)",
+              background: "var(--background)",
+              foreground: "var(--foreground)",
               primary: {
-                DEFAULT: "hsl(var(--primary))",
-                foreground: "hsl(var(--primary-foreground))",
+                DEFAULT: "var(--primary)",
+                foreground: "var(--primary-foreground)",
               },
               secondary: {
-                DEFAULT: "hsl(var(--secondary))",
-                foreground: "hsl(var(--secondary-foreground))",
+                DEFAULT: "var(--secondary)",
+                foreground: "var(--secondary-foreground)",
               },
               destructive: {
-                DEFAULT: "hsl(var(--destructive))",
-                foreground: "hsl(var(--destructive-foreground))",
+                DEFAULT: "var(--destructive)",
+                foreground: "var(--destructive-foreground)",
               },
               muted: {
-                DEFAULT: "hsl(var(--muted))",
-                foreground: "hsl(var(--muted-foreground))",
+                DEFAULT: "var(--muted)",
+                foreground: "var(--muted-foreground)",
               },
               accent: {
-                DEFAULT: "hsl(var(--accent))",
-                foreground: "hsl(var(--accent-foreground))",
-              },
-              popover: {
-                DEFAULT: "hsl(var(--popover))",
-                foreground: "hsl(var(--popover-foreground))",
+                DEFAULT: "var(--accent)",
+                foreground: "var(--accent-foreground)",
               },
               card: {
-                DEFAULT: "hsl(var(--card))",
-                foreground: "hsl(var(--card-foreground))",
+                DEFAULT: "var(--card)",
+                foreground: "var(--card-foreground)",
               },
             },
             borderRadius: {
@@ -71,9 +62,9 @@
               md: "calc(var(--radius) - 2px)",
               sm: "calc(var(--radius) - 4px)",
             },
-          },
-          fontFamily: {
-            sans: ['Noto Sans KR', 'Inter', 'sans-serif'],
+            fontFamily: {
+              sans: ['Noto Sans KR', 'sans-serif'],
+            },
           },
         },
       }
@@ -81,186 +72,454 @@
     
     <style>
       :root {
-        --background: 0 0% 100%;
-        --foreground: 222.2 84% 4.9%;
-        --card: 0 0% 100%;
-        --card-foreground: 222.2 84% 4.9%;
-        --popover: 0 0% 100%;
-        --popover-foreground: 222.2 84% 4.9%;
-        --primary: 221.2 83.2% 53.3%;
-        --primary-foreground: 210 40% 98%;
-        --secondary: 210 40% 96.1%;
-        --secondary-foreground: 222.2 47.4% 11.2%;
-        --muted: 210 40% 96.1%;
-        --muted-foreground: 215.4 16.3% 46.9%;
-        --accent: 210 40% 96.1%;
-        --accent-foreground: 222.2 47.4% 11.2%;
-        --destructive: 0 84.2% 60.2%;
-        --destructive-foreground: 210 40% 98%;
-        --border: 214.3 31.8% 91.4%;
-        --input: 214.3 31.8% 91.4%;
-        --ring: 221.2 83.2% 53.3%;
+        --background: white;
+        --foreground: #0f172a;
+        --card: white;
+        --card-foreground: #0f172a;
+        --popover: white;
+        --popover-foreground: #0f172a;
+        --primary: #3b82f6;
+        --primary-foreground: white;
+        --secondary: #f1f5f9;
+        --secondary-foreground: #1e293b;
+        --muted: #f1f5f9;
+        --muted-foreground: #64748b;
+        --accent: #f1f5f9;
+        --accent-foreground: #1e293b;
+        --destructive: #ef4444;
+        --destructive-foreground: white;
+        --border: #e2e8f0;
+        --input: #e2e8f0;
+        --ring: #3b82f6;
         --radius: 0.5rem;
+      }
+
+      .dark {
+        --background: #0f172a;
+        --foreground: #f8fafc;
+        --card: #1e293b;
+        --card-foreground: #f8fafc;
+        --popover: #1e293b;
+        --popover-foreground: #f8fafc;
+        --primary: #3b82f6;
+        --primary-foreground: #f8fafc;
+        --secondary: #334155;
+        --secondary-foreground: #f8fafc;
+        --muted: #334155;
+        --muted-foreground: #94a3b8;
+        --accent: #334155;
+        --accent-foreground: #f8fafc;
+        --destructive: #7f1d1d;
+        --destructive-foreground: #f8fafc;
+        --border: #334155;
+        --input: #334155;
+        --ring: #3b82f6;
       }
       
       body {
-        font-family: 'Noto Sans KR', 'Inter', sans-serif;
-        background-color: #f8fafc;
+        font-family: 'Noto Sans KR', sans-serif;
+        background-color: var(--background);
+        color: var(--foreground);
+        min-height: 100vh;
       }
       
-      /* 뉴모피즘 스타일을 위한 기존 클래스 재정의 */
+      /* Shadcn UI 스타일 */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition-property: color, background-color, border-color;
+        transition-duration: 150ms;
+        transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+        padding: 0.5rem 1rem;
+      }
+      
       .btn-primary {
-        @apply neu-button neu-button-primary;
+        background-color: var(--primary);
+        color: var(--primary-foreground);
+      }
+      .btn-primary:hover {
+        background-color: color-mix(in srgb, var(--primary) 90%, black);
       }
       
       .btn-secondary {
-        @apply neu-button;
+        background-color: var(--secondary);
+        color: var(--secondary-foreground);
+      }
+      .btn-secondary:hover {
+        background-color: color-mix(in srgb, var(--secondary) 80%, black);
+      }
+      
+      .btn-danger, .btn-destructive {
+        background-color: var(--destructive);
+        color: var(--destructive-foreground);
+      }
+      .btn-danger:hover, .btn-destructive:hover {
+        background-color: color-mix(in srgb, var(--destructive) 90%, black);
       }
       
       .btn-outline {
-        @apply neu-button;
+        border: 1px solid var(--border);
+        background-color: var(--background);
+      }
+      .btn-outline:hover {
+        background-color: var(--accent);
+        color: var(--accent-foreground);
       }
       
-      .btn-destructive {
-        @apply neu-button;
-        color: #c53030;
+      .btn-ghost {
+        background-color: transparent;
+      }
+      .btn-ghost:hover {
+        background-color: var(--accent);
+        color: var(--accent-foreground);
       }
       
-      .form-input {
-        @apply neu-input;
+      .btn-link {
+        color: var(--primary);
+        text-decoration: underline;
+        text-underline-offset: 4px;
       }
       
-      .input-group {
-        @apply mb-5 p-4 neu-section-concave;
+      .input {
+        display: flex;
+        height: 2.5rem;
+        width: 100%;
+        border-radius: 0.375rem;
+        border: 1px solid var(--input);
+        background-color: var(--background);
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+        color: var(--foreground);
+      }
+      .input::placeholder {
+        color: var(--muted-foreground);
+      }
+      
+      /* 다크모드에서 입력창 스타일 조정 */
+      .dark .input {
+        background-color: #1e293b; /* 약간 더 밝은 배경색 */
+        color: #f8fafc; /* 밝은 텍스트 색상 */
+        border-color: #475569; /* 더 잘 보이는 테두리 색상 */
+      }
+      .dark .input::placeholder {
+        color: #94a3b8; /* 다크모드에서 placeholder 색상 조정 */
+      }
+      .dark .input:focus {
+        border-color: var(--primary);
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+      }
+      
+      .card {
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background-color: var(--card);
+        color: var(--card-foreground);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+      
+      .card-header {
+        display: flex;
+        flex-direction: column;
+        padding: 1.5rem;
+      }
+      
+      .card-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+      }
+      
+      .card-description {
+        font-size: 0.875rem;
+        color: var(--muted-foreground);
+      }
+      
+      .card-content {
+        padding: 0 1.5rem 1.5rem 1.5rem;
+      }
+      
+      .card-footer {
+        display: flex;
+        align-items: center;
+        padding: 0 1.5rem 1.5rem 1.5rem;
+      }
+      
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 9999px;
+        border: 1px solid transparent;
+        padding: 0 0.625rem;
+        height: 1.25rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        transition-property: color, background-color, border-color;
+        transition-duration: 150ms;
+      }
+      
+      .badge-primary {
+        background-color: var(--primary);
+        color: var(--primary-foreground);
+      }
+      
+      .badge-secondary {
+        background-color: var(--secondary);
+        color: var(--secondary-foreground);
+      }
+      
+      .badge-destructive {
+        background-color: var(--destructive);
+        color: var(--destructive-foreground);
+      }
+      
+      .badge-outline {
+        border-color: var(--border);
+        color: var(--foreground);
+      }
+      
+      .alert {
+        position: relative;
+        width: 100%;
+        border-radius: 0.5rem;
+        border: 1px solid;
+        padding: 1rem;
       }
       
       .alert-success {
-        @apply neu-alert neu-alert-success;
+        background-color: rgba(16, 185, 129, 0.1);
+        color: rgb(6, 95, 70);
+        border-color: rgba(16, 185, 129, 0.2);
+      }
+      .dark .alert-success {
+        background-color: rgba(16, 185, 129, 0.2);
+        color: rgb(110, 231, 183);
+        border-color: rgba(16, 185, 129, 0.3);
       }
       
       .alert-error {
-        @apply neu-alert neu-alert-error;
+        background-color: rgba(239, 68, 68, 0.1);
+        color: rgb(153, 27, 27);
+        border-color: rgba(239, 68, 68, 0.2);
+      }
+      .dark .alert-error {
+        background-color: rgba(239, 68, 68, 0.2);
+        color: rgb(248, 113, 113);
+        border-color: rgba(239, 68, 68, 0.3);
       }
       
-      .tag {
-        @apply neu-tag;
+      .btn-sm { height: 2.25rem; padding: 0 0.75rem; }
+      .btn-lg { height: 2.75rem; padding: 0 2rem; }
+      .btn-icon { height: 2.5rem; width: 2.5rem; padding: 0; }
+      
+      /* 커스텀 유틸리티 클래스들 */
+      .container {
+        width: 100%;
+        margin-left: auto;
+        margin-right: auto;
+        padding-left: 2rem;
+        padding-right: 2rem;
       }
       
-      .link-button {
-        @apply neu-button neu-button-primary;
+      .flex { display: flex; }
+      .items-center { align-items: center; }
+      .justify-center { justify-content: center; }
+      .justify-between { justify-content: space-between; }
+      .gap-2 { gap: 0.5rem; }
+      .gap-4 { gap: 1rem; }
+      .gap-6 { gap: 1.5rem; }
+      .space-y-1\.5 > * + * { margin-top: 0.375rem; }
+      .space-y-2 > * + * { margin-top: 0.5rem; }
+      .space-y-6 > * + * { margin-top: 1.5rem; }
+      
+      .w-full { width: 100%; }
+      .h-16 { height: 4rem; }
+      .h-10 { height: 2.5rem; }
+      .h-5 { height: 1.25rem; }
+      .h-4 { height: 1rem; }
+      .h-6 { height: 1.5rem; }
+      
+      .w-10 { width: 2.5rem; }
+      .w-5 { width: 1.25rem; }
+      .w-4 { width: 1rem; }
+      .w-6 { width: 1.5rem; }
+      
+      .text-sm { font-size: 0.875rem; }
+      .text-lg { font-size: 1.125rem; }
+      .text-xs { font-size: 0.75rem; }
+      
+      .font-medium { font-weight: 500; }
+      .font-semibold { font-weight: 600; }
+      .font-bold { font-weight: 700; }
+      
+      .py-8 { padding-top: 2rem; padding-bottom: 2rem; }
+      .p-4 { padding: 1rem; }
+      .p-6 { padding: 1.5rem; }
+      .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+      .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+      .pt-0 { padding-top: 0; }
+      .pb-2 { padding-bottom: 0.5rem; }
+      .pl-10 { padding-left: 2.5rem; }
+      
+      .mb-4 { margin-bottom: 1rem; }
+      .mb-6 { margin-bottom: 1.5rem; }
+      .mt-6 { margin-top: 1.5rem; }
+      .ml-auto { margin-left: auto; }
+      .ml-4 { margin-left: 1rem; }
+      .ml-2 { margin-left: 0.5rem; }
+      .ml-1 { margin-left: 0.25rem; }
+      .mr-2 { margin-right: 0.5rem; }
+      .mr-1 { margin-right: 0.25rem; }
+      
+      .border-b { border-bottom-width: 1px; }
+      .border-t { border-top-width: 1px; }
+      
+      .rounded-md { border-radius: 0.375rem; }
+      .rounded-lg { border-radius: 0.5rem; }
+      .rounded-full { border-radius: 9999px; }
+      
+      .bg-muted { background-color: var(--muted); }
+      .bg-primary { background-color: var(--primary); }
+      .bg-secondary { background-color: var(--secondary); }
+      
+      .text-primary { color: var(--primary); }
+      .text-muted-foreground { color: var(--muted-foreground); }
+      .text-primary-foreground { color: var(--primary-foreground); }
+      .text-secondary-foreground { color: var(--secondary-foreground); }
+      
+      .hidden { display: none; }
+      .sticky { position: sticky; }
+      .top-0 { top: 0; }
+      .z-50 { z-index: 50; }
+      
+      .min-h-screen { min-height: 100vh; }
+      .relative { position: relative; }
+      .absolute { position: absolute; }
+      .left-3 { left: 0.75rem; }
+      .top-1\/2 { top: 50%; }
+      .-translate-y-1\/2 { transform: translateY(-50%); }
+      
+      .transition-colors { transition-property: color, background-color, border-color; }
+      .hover\:bg-accent:hover { background-color: var(--accent); }
+      .hover\:text-accent-foreground:hover { color: var(--accent-foreground); }
+      .hover\:text-primary:hover { color: var(--primary); }
+      
+      .hover\:bg-primary\/90:hover { background-color: color-mix(in srgb, var(--primary) 90%, black); }
+      
+      .grid { display: grid; }
+      .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      
+      .inline-flex { display: inline-flex; }
+      .inline-block { display: inline-block; }
+      .flex-col { flex-direction: column; }
+      .flex-1 { flex: 1 1 0%; }
+      
+      .shrink-0 { flex-shrink: 0; }
+      .align-text-bottom { vertical-align: text-bottom; }
+      .text-center { text-align: center; }
+      
+      /* 미디어 쿼리 */
+      @media (min-width: 768px) {
+        .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       }
       
-      .table-container {
-        @apply w-full overflow-auto relative rounded-md shadow-sm;
+      /* 기존 스타일 덮어쓰기 */
+      .border {
+        border: 1px solid var(--border);
       }
       
-      .table-header {
-        @apply h-12 px-4 text-left align-middle font-medium text-gray-600 bg-gray-50 [&:has([role=checkbox])]:pr-0;
+      .bg-background {
+        background-color: var(--background);
       }
       
-      .table-row {
-        @apply border-b transition-colors hover:bg-blue-50/50 data-[state=selected]:bg-blue-50;
+      .max-w-4xl {
+        max-width: 56rem;
       }
       
-      .table-cell {
-        @apply p-4 align-middle [&:has([role=checkbox])]:pr-0 text-sm text-gray-700;
+      .mx-auto {
+        margin-left: auto;
+        margin-right: auto;
       }
       
-      .masthead {
-        @apply bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2 text-center text-sm font-medium shadow-md;
-      }
-      
-      .footer {
-        @apply mt-8 pt-4 border-t border-gray-200 text-gray-500 text-xs;
-      }
-      
-      .inline-form-group {
-        @apply flex items-center gap-2 mb-4;
-      }
-      
-      .inline-form-group label {
-        @apply w-1/4 font-medium text-gray-700 flex items-center;
-      }
-      
-      .inline-form-group .form-input-container {
-        @apply w-3/4;
-      }
-      
-      /* 다크모드 호환성 수정 */
-      [data-theme="dark"] .text-gray-800,
-      [data-theme="dark"] .text-gray-700,
-      [data-theme="dark"] .text-gray-600 {
-        color: var(--text-primary);
-      }
-      
-      [data-theme="dark"] .text-gray-500,
-      [data-theme="dark"] .text-gray-400 {
-        color: var(--text-secondary);
-      }
-      
-      [data-theme="dark"] .border-blue-100,
-      [data-theme="dark"] .border-gray-200 {
-        border-color: var(--shadow-dark);
-      }
-      
-      /* 폼 요소 다크모드 호환성 */
-      [data-theme="dark"] .form-label {
-        color: var(--text-secondary);
+      .flex-wrap {
+        flex-wrap: wrap;
       }
     </style>
   </head>
-  <body class="min-h-screen font-sans antialiased">
-
-    <div class="neu-container flex flex-col mx-auto mt-8 px-4 min-h-screen">
-      <div class="w-full mb-6">
-        <!-- 운영기관 식별자 (Identifier) -->
-        <div class="neu-section-convex p-4 mb-4 flex items-center justify-between">
-          <span class="text-gray-600 text-sm font-medium flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+  <body>
+    <header class="sticky top-0 z-50 w-full border-b bg-background">
+      <div class="container flex h-16 items-center">
+        <div class="flex items-center gap-2 font-bold">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6 text-primary">
+            <path d="M21 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"></path>
+            <path d="m3 7 9 6 9-6"></path>
+          </svg>
+          <span>KCA 뉴스레터</span>
+        </div>
+        
+        <nav class="ml-auto flex gap-4">
+          <a href="{{ url_for('list_subscribers') }}" class="text-sm font-medium transition-colors hover:text-primary {% if request.path == url_for('list_subscribers') %}text-primary{% endif %}">
+            구독자
+          </a>
+          <a href="{{ url_for('add_subscriber') }}" class="text-sm font-medium transition-colors hover:text-primary {% if request.path == url_for('add_subscriber') %}text-primary{% endif %}">
+            구독자 추가
+          </a>
+        </nav>
+        
+        <div class="ml-4 flex items-center gap-2">
+          {% if session.get('logged_in') %}
+            <a href="{{ url_for('logout') }}" class="btn btn-outline btn-sm">로그아웃</a>
+          {% else %}
+            <a href="{{ url_for('login') }}" class="btn btn-outline btn-sm">로그인</a>
+          {% endif %}
+          <button id="theme-toggle" class="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dark-icon hidden h-5 w-5">
+              <circle cx="12" cy="12" r="4"></circle>
+              <path d="M12 2v2"></path>
+              <path d="M12 20v2"></path>
+              <path d="m4.93 4.93 1.41 1.41"></path>
+              <path d="m17.66 17.66 1.41 1.41"></path>
+              <path d="M2 12h2"></path>
+              <path d="M20 12h2"></path>
+              <path d="m6.34 17.66-1.41 1.41"></path>
+              <path d="m19.07 4.93-1.41 1.41"></path>
             </svg>
-            KCA 뉴스레터 관리
-          </span>
-          
-          <!-- 다크모드 토글 버튼 추가 -->
-          <button id="theme-toggle" class="neu-button p-2 h-10 w-10 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 dark-icon hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 light-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="light-icon h-5 w-5">
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
             </svg>
           </button>
         </div>
-        
-        <!-- 자동 발송 시간 안내 -->
-        <div class="neu-section-concave mb-4">
-          <p class="text-blue-700 text-sm font-medium flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            토픽별 뉴스기사는 매일 아침 오전 8:30분에 자동발송됩니다(24시간 내 최신뉴스 기사만 포함함)
-          </p>
-        </div>
       </div>
-      
-      <div class="flex-1">
-        <div class="neu-card mb-6">
-          {% block content %}{% endblock %}
-        </div>
-      </div>
-      
-      <!-- 푸터 (Footer) -->
-      <div class="footer">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-2">
-          <div>
-            <p>© 2024 KCA 뉴스레터 관리</p>
-          </div>
-        </div>
-      </div>
-    </div>
+    </header>
     
-    <!-- 다크모드 토글 스크립트 -->
+    <main class="container py-8">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="{% if category == 'success' %}alert alert-success{% else %}alert alert-error{% endif %} mb-4 flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                {% if category == 'success' %}
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                {% else %}
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                {% endif %}
+              </svg>
+              <div>{{ message }}</div>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+      
+      {% block content %}{% endblock %}
+    </main>
+    
     <script>
       // 다크모드 토글 기능
       document.addEventListener('DOMContentLoaded', function() {
@@ -271,23 +530,26 @@
         
         // 저장된 테마 확인
         const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'dark') {
-          html.setAttribute('data-theme', 'dark');
+        if (savedTheme === 'light') {
+          html.classList.remove('dark');
           darkIcon.classList.remove('hidden');
           lightIcon.classList.add('hidden');
+        } else {
+          darkIcon.classList.add('hidden');
+          lightIcon.classList.remove('hidden');
         }
         
         themeToggle.addEventListener('click', function() {
-          if (html.getAttribute('data-theme') === 'dark') {
-            html.removeAttribute('data-theme');
+          if (html.classList.contains('dark')) {
+            html.classList.remove('dark');
             localStorage.setItem('theme', 'light');
-            darkIcon.classList.add('hidden');
-            lightIcon.classList.remove('hidden');
-          } else {
-            html.setAttribute('data-theme', 'dark');
-            localStorage.setItem('theme', 'dark');
             darkIcon.classList.remove('hidden');
             lightIcon.classList.add('hidden');
+          } else {
+            html.classList.add('dark');
+            localStorage.setItem('theme', 'dark');
+            darkIcon.classList.add('hidden');
+            lightIcon.classList.remove('hidden');
           }
         });
       });

@@ -1,134 +1,198 @@
 {% extends "base.html" %}
 
-{% block title %}구독자 목록 | KCA 뉴스레터 관리{% endblock %}
+{% block title %}구독자 목록 | KCA 뉴스레터{% endblock %}
 
 {% block content %}
-<div class="flex flex-wrap justify-between items-center mb-6 border-b border-blue-100 pb-4">
-  <h2 class="text-xl font-semibold text-gray-800">구독자 목록</h2>
-  <div class="flex space-x-2 mt-2 sm:mt-0">
-    <a href="{{ url_for('add_subscriber_web') }}" class="neu-button neu-button-primary group flex items-center hover:scale-105 transition-transform">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-      </svg>
-      구독자 추가
-    </a>
-  </div>
+<div class="flex justify-between items-center mb-6">
+  <h1 class="text-2xl font-bold">구독자 관리</h1>
+  <a href="{{ url_for('add_subscriber') }}" class="btn btn-primary">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 h-4 w-4">
+      <line x1="12" y1="5" x2="12" y2="19"></line>
+      <line x1="5" y1="12" x2="19" y2="12"></line>
+    </svg>
+    구독자 추가
+  </a>
 </div>
 
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
-    {% for message in messages %}
-      <div class="{% if '성공' in message %}neu-alert neu-alert-success{% else %}neu-alert neu-alert-error{% endif %} mb-4">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          {% if '성공' in message %}
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-          {% else %}
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          {% endif %}
-        </svg>
-        <div>{{ message }}</div>
+<div class="grid lg:grid-cols-3 md:grid-cols-2 gap-6">
+  <!-- 왼쪽 컬럼: 구독자 목록 검색 및 필터 -->
+  <div class="lg:col-span-2">
+    <div class="card mb-6">
+      <div class="card-header flex items-center justify-between pb-2">
+        <h2 class="card-title">검색 및 필터</h2>
+        <div class="badge bg-primary text-primary-foreground">{{ subscribers|length }}명</div>
       </div>
-    {% endfor %}
-  {% endif %}
-{% endwith %}
-
-<div class="neu-section-convex overflow-hidden">
-  <div class="p-4 sm:p-6 border-b border-blue-100 flex flex-wrap justify-between items-center">
-    <div class="flex items-center space-x-2">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-      </svg>
-      <span class="text-gray-700 font-medium">총 구독자 수: <span class="text-blue-600 font-bold">{{ subscribers|length }}명</span></span>
+      <div class="card-content">
+        <form method="get" action="{{ url_for('list_subscribers') }}" class="flex gap-2 mb-4">
+          <div class="relative flex-1">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" name="search" placeholder="이름 또는 이메일로 검색" value="{{ request.args.get('search', '') }}" 
+              class="input pl-10 w-full">
+          </div>
+          <button type="submit" class="btn">검색</button>
+        </form>
+        
+        <div class="flex flex-wrap gap-2">
+          <a href="{{ url_for('list_subscribers') }}" class="badge bg-secondary text-secondary-foreground">
+            모두 보기
+          </a>
+          {% for topic in all_topics %}
+          <a href="{{ url_for('list_subscribers', topic=topic) }}" 
+            class="badge {% if request.args.get('topic') == topic %}bg-primary text-primary-foreground{% else %}bg-muted text-muted-foreground{% endif %}">
+            {{ topic }}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
     </div>
     
-    <div class="flex space-x-3 mt-2 sm:mt-0">
-      <span class="text-gray-500 text-sm flex items-center">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        최종 업데이트: {{ update_time }}
-      </span>
+    <div class="card">
+      <div class="card-header pb-2">
+        <h2 class="card-title">구독자 목록</h2>
+        <p class="card-description">등록된 뉴스레터 구독자 정보</p>
+      </div>
+      <div class="card-content p-0">
+        {% if subscribers %}
+        <div class="divide-y">
+          {% for subscriber in subscribers %}
+          <div class="p-4 hover:bg-muted/50 transition-colors">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center text-lg font-semibold">
+                {{ subscriber.name[0] }}
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <h3 class="font-medium truncate">{{ subscriber.name }}</h3>
+                    <p class="text-sm text-muted-foreground truncate">{{ subscriber.email }}</p>
+                  </div>
+                  <div class="flex items-center gap-1 flex-wrap">
+                    {% for topic in subscriber.topics %}
+                    <span class="badge">{{ topic }}</span>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center">
+                <a href="{{ url_for('edit_subscriber', subscriber_id=subscriber.id) }}" class="btn btn-icon btn-ghost">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                    <path d="M12 20h9"></path>
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="p-6 text-center">
+          <div class="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6 text-muted-foreground">
+              <path d="M18 6 6 18"></path>
+              <path d="m6 6 12 12"></path>
+            </svg>
+          </div>
+          <h3 class="mb-1 text-xl font-semibold">구독자가 없습니다</h3>
+          <p class="text-muted-foreground mb-4">검색 조건에 맞는 구독자가 없습니다.</p>
+          <a href="{{ url_for('add_subscriber') }}" class="btn btn-outline">구독자 추가하기</a>
+        </div>
+        {% endif %}
+      </div>
     </div>
   </div>
   
-  {% if subscribers %}
-    <div class="overflow-x-auto neu-section-concave m-4">
-      <table class="neu-table min-w-full">
-        <thead>
-          <tr>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이메일</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">관심 토픽</th>
-            <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">작업</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for subscriber in subscribers %}
-            <tr class="hover:bg-blue-50/50 transition-colors">
-              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800">
-                <a href="{{ url_for('edit_subscriber_web', id=subscriber.id) }}" class="hover:text-blue-600 hover:underline transition-colors flex items-center group">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-blue-400 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                  {{ subscriber.name }}
-                </a>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                <a href="mailto:{{ subscriber.email }}" class="hover:text-blue-600 hover:underline transition-colors flex items-center group">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-blue-400 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  {{ subscriber.email }}
-                </a>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                <div class="flex flex-wrap gap-1">
-                  {% for topic in subscriber.topics.split(',') %}
-                    <span class="neu-tag">
-                      {{ topic.strip() }}
-                    </span>
-                  {% endfor %}
-                </div>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
-                <form method="post" action="{{ url_for('delete_subscriber_web', id=subscriber.id) }}" class="inline-block">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                  <button type="submit" onclick="return confirm('정말로 이 구독자를 삭제하시겠습니까?');" class="neu-button group inline-flex items-center hover:scale-105 transition-transform" style="color: #c53030;">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    삭제
-                  </button>
-                </form>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+  <!-- 오른쪽 컬럼: 뉴스레터 미리보기 및 통계 -->
+  <div>
+    <div class="card mb-6">
+      <div class="card-header pb-2">
+        <h2 class="card-title">뉴스레터 미리보기</h2>
+        <p class="card-description">발송 예정 뉴스레터</p>
+      </div>
+      <div class="card-content">
+        <div class="bg-primary/10 rounded-md p-4 mb-4">
+          <div class="text-sm font-medium mb-2">오늘의 토픽</div>
+          <div class="flex flex-wrap gap-1">
+            {% for topic in all_topics[:5] %}
+            <span class="badge">{{ topic }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-sm font-medium">발송 예정 시간</h3>
+            <p class="text-2xl font-semibold">08:30 AM</p>
+          </div>
+          
+          <div>
+            <h3 class="text-sm font-medium">발송 구독자 수</h3>
+            <p class="text-2xl font-semibold">{{ subscribers|length }}명</p>
+          </div>
+        </div>
+      </div>
     </div>
-  {% else %}
-    <div class="neu-section-concave m-4 p-10 text-center">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto text-blue-200 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-      </svg>
-      <p class="text-gray-600 font-medium">아직 구독자가 없습니다</p>
-      <p class="text-gray-500 text-sm mt-2">첫 번째 구독자를 추가해 보세요</p>
-      <a href="{{ url_for('add_subscriber_web') }}" class="neu-button neu-button-primary inline-flex items-center mt-4 group hover:scale-105 transition-transform">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-        </svg>
-        구독자 추가하기
-      </a>
+    
+    <div class="card">
+      <div class="card-header pb-2">
+        <h2 class="card-title">최근 활동</h2>
+        <p class="card-description">시스템 활동 로그</p>
+      </div>
+      <div class="card-content p-0">
+        <div class="divide-y">
+          <div class="py-3 px-4">
+            <div class="flex gap-4 items-start">
+              <div class="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                  <path d="M12 5v14"></path>
+                  <path d="m19 12-7 7-7-7"></path>
+                </svg>
+              </div>
+              <div>
+                <div class="text-sm"><strong>뉴스레터 발송</strong></div>
+                <p class="text-xs text-muted-foreground">2023-04-26 08:30:00</p>
+                <p class="text-sm mt-1">45개 기사가 포함된 뉴스레터가 발송되었습니다.</p>
+              </div>
+            </div>
+          </div>
+          <div class="py-3 px-4">
+            <div class="flex gap-4 items-start">
+              <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="8.5" cy="7" r="4"></circle>
+                  <line x1="18" y1="8" x2="23" y2="13"></line>
+                  <line x1="23" y1="8" x2="18" y2="13"></line>
+                </svg>
+              </div>
+              <div>
+                <div class="text-sm"><strong>구독자 변경</strong></div>
+                <p class="text-xs text-muted-foreground">2023-04-25 15:45:22</p>
+                <p class="text-sm mt-1">새로운 구독자가 추가되었습니다.</p>
+              </div>
+            </div>
+          </div>
+          <div class="py-3 px-4">
+            <div class="flex gap-4 items-start">
+              <div class="w-8 h-8 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                  <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </div>
+              <div>
+                <div class="text-sm"><strong>시스템 업데이트</strong></div>
+                <p class="text-xs text-muted-foreground">2023-04-24 10:15:35</p>
+                <p class="text-sm mt-1">뉴스레터 시스템이 업데이트 되었습니다.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-  {% endif %}
-</div>
-
-<div class="mt-4 flex justify-end">
-  <a href="{{ url_for('logout') }}" class="neu-button group hover:scale-105 transition-transform" style="color: #c53030;">
-    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 group-hover:translate-x-[-2px] transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-    </svg>
-    로그아웃
-  </a>
+  </div>
 </div>
 {% endblock %} 
