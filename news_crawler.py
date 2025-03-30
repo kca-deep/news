@@ -201,7 +201,7 @@ class NewsFetcher:
                 return []
             root = ET.fromstring(response.content)
             news_items = []
-            two_days_ago = datetime.now(timezone.utc) - timedelta(days=2)
+            one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
             for item in root.findall(".//item"):
                 title_elem = item.find("title")
                 link_elem = item.find("link")
@@ -219,7 +219,7 @@ class NewsFetcher:
                     try:
                         parsed_date = email.utils.parsedate_to_datetime(pub_date_text)
                         formatted_date = parsed_date.strftime("%Y-%m-%d %H:%M")
-                        is_recent = parsed_date >= two_days_ago
+                        is_recent = parsed_date >= one_day_ago
                     except Exception:
                         logger.warning("날짜 파싱 오류")
                         formatted_date = pub_date_text
@@ -321,14 +321,24 @@ class NewsFetcher:
             logger.error("OpenAI API 키가 설정되지 않았습니다.")
             return "요약을 생성할 수 없습니다. API 키를 확인하세요."
         system_prompt = (
-            "당신은 최고의 뉴스 에디터로, 뉴스 기사를 명확하고 풍부하게 요약하는 전문가입니다.\n\n"
-            "뉴스 기사의 핵심 내용을 파악하여 통합된 하나의 요약문을 작성해주세요. 이 요약문은 다음 내용을 포함해야 합니다:\n\n"
-            "- 기사의 핵심 주제 및 중요한 정보\n"
-            "- 주요 사실, 관련 데이터, 중요한 인용구\n"
-            "- 뉴스의 맥락적 중요성과 잠재적 영향\n\n"
-            "작성 시 다음 원칙을 따르세요:\n"
-            "- 정확성, 간결성, 객관성, 가독성, 완전성을 고려\n"
-            "문단 구분은 자연스럽게 하되, 번호나 글머리 기호 없이 하나의 흐름으로 작성하고, 전체 요약은 정확히 300자로 작성하세요. 줄임표시(...)는 사용하지 마세요."
+            "당신은 최고 수준의 뉴스 에디터이자 전문 요약가로, 복잡한 뉴스 기사를 명확하고 간결하게 요약하는 전문가입니다.\n\n"
+            "다음 원칙에 따라 뉴스 기사의 500자 이내 요약문을 작성해주세요:\n\n"
+            "1. 필수 요소:\n"
+            "   - 기사의 핵심 주제와 가장 중요한 사실 정보를 먼저 전달\n"
+            "   - 주요 인물, 장소, 날짜 등 기본 정보 포함\n"
+            "   - 주요 수치, 통계, 데이터가 있다면 반드시 포함\n"
+            "   - 중요한 인용구나 발언은 간결하게 인용\n"
+            "   - 이슈의 배경, 맥락 및 잠재적 영향 제시\n\n"
+            "2. 키워드 처리:\n"
+            "   - 기사에서 반복되는 핵심 키워드나 전문용어를 파악하여 적절히 활용\n"
+            "   - 업계나 분야별 전문용어는 필요한 경우 간단한 설명 추가\n\n"
+            "3. 구성 및 형식:\n"
+            "   - 가장 중요한 정보부터 순차적으로 배치\n"
+            "   - 내용에 따라 1-3개의 자연스러운 문단으로 구성\n"
+            "   - 번호나 글머리 기호 없이 하나의 연결된 흐름으로 작성\n"
+            "   - 객관적이고 중립적인 톤 유지 (원문의 관점 그대로 전달)\n"
+            "   - 정확히 500자 이내로 작성 (초과하지 말 것)\n\n"
+            "이 요약은 원본 기사를 읽지 않고도 핵심 내용을 완벽히 이해할 수 있도록 충분히 상세하면서도 간결해야 합니다."
         )
         data = {
             "model": os.getenv("GPT_MODEL", "gpt-4o-mini"),
@@ -336,11 +346,11 @@ class NewsFetcher:
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": f"제목: {title}\n\n내용: {text}\n\n위 뉴스 기사를 요약해주세요.",
+                    "content": f"제목: {title}\n\n내용: {text}\n\n위 뉴스 기사를 500자 이내로 핵심을 놓치지 않고 요약해주세요.",
                 },
             ],
             "temperature": 0.5,
-            "max_tokens": 500,
+            "max_tokens": 800,
             "frequency_penalty": 0.2,
             "presence_penalty": 0.1,
         }
@@ -868,6 +878,16 @@ class SubscriberManager:
                 if topic == item.get("query", "기타"):
                     topic_news[topic].append(item)
 
+        # 뉴스가 없는 토픽 목록 수집
+        topics_without_news = [
+            topic
+            for topic in topics
+            if topic not in topic_news or not topic_news[topic]
+        ]
+        logger.info(
+            f"{name}의 뉴스가 없는 토픽: {', '.join(topics_without_news) if topics_without_news else '없음'}"
+        )
+
         if not topic_news:
             logger.warning(f"{name}의 관심 토픽과 일치하는 뉴스가 없습니다.")
             return {
@@ -881,7 +901,9 @@ class SubscriberManager:
             topic_news[topic] = topic_news[topic][:7]
 
         current_date = datetime.now().strftime("%Y년 %m월 %d일")
-        html_content = self.build_email_html(name, current_date, topic_news)
+        html_content = self.build_email_html(
+            name, current_date, topic_news, topics_without_news
+        )
         subject = f"{name}님을 위한 관심 토픽 뉴스 요약 ({current_date})"
         success = self.email_service.send_email(name, email_addr, subject, html_content)
         return {
@@ -892,7 +914,9 @@ class SubscriberManager:
         }
 
     @staticmethod
-    def build_email_html(name: str, current_date: str, topic_news: dict) -> str:
+    def build_email_html(
+        name: str, current_date: str, topic_news: dict, topics_without_news: list = None
+    ) -> str:
         html = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -913,6 +937,15 @@ class SubscriberManager:
     <div style="margin-bottom: 24px; padding: 16px; background: #f0f9ff; border-left: 4px solid #3b82f6;">
       <p style="color: #1e40af; font-size: 16px;">안녕하세요, <strong>{name}</strong>님!</p>
       <p style="color: #1e40af; font-size: 14px; margin-top: 8px;">최근 관심 토픽 뉴스를 정리했습니다.</p>
+    </div>
+"""
+
+        # 뉴스가 없는 토픽 정보 표시
+        if topics_without_news and len(topics_without_news) > 0:
+            html += f"""
+    <div style="margin-bottom: 24px; padding: 16px; background: #fff7ed; border-left: 4px solid #f97316; border-radius: 4px;">
+      <p style="color: #9a3412; font-size: 15px; font-weight: 500;">최신 뉴스가 없는 토픽: <strong>{', '.join(topics_without_news)}</strong></p>
+      <p style="color: #9a3412; font-size: 13px; margin-top: 6px;">해당 토픽은 최근 24시간 내 새로운 뉴스가 발견되지 않았습니다.</p>
     </div>
 """
         count = 0
@@ -939,7 +972,7 @@ class SubscriberManager:
                     summary = item.get(
                         "ai_summary", item.get("summary", "요약 정보가 없습니다.")
                     )
-                    summary = summary if len(summary) <= 300 else summary[:300]
+                    summary = summary if len(summary) <= 500 else summary[:500]
                     html += f"""
       <div style="margin-bottom: 24px; padding: 16px; background: {background}; border: 1px solid #e5e7eb; border-radius: 8px;">
         <h3 style="font-size: 18px; font-weight: 600; color: #1e3a8a; margin-bottom: 8px;">
