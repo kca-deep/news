@@ -17,6 +17,9 @@
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
     
+    <!-- Neumorphic CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/neumorphic.css') }}">
+    
     <script>
       tailwind.config = {
         theme: {
@@ -105,45 +108,50 @@
         background-color: #f8fafc;
       }
       
-      /* Shadcn-style components */
+      /* 뉴모피즘 스타일을 위한 기존 클래스 재정의 */
       .btn-primary {
-        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700 h-10 px-4 py-2 shadow-md border border-blue-500/20 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-lg;
+        @apply neu-button neu-button-primary;
       }
       
       .btn-secondary {
-        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-gray-100 text-gray-700 hover:bg-gray-200 h-10 px-4 py-2 shadow-md border border-gray-200 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-lg;
+        @apply neu-button;
       }
       
       .btn-outline {
-        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-gray-300 bg-transparent hover:bg-gray-50 h-10 px-4 py-2 text-gray-700 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-sm;
+        @apply neu-button;
       }
       
       .btn-destructive {
-        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-red-100 text-red-600 hover:bg-red-200 h-10 px-4 py-2 shadow-md border border-red-200 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-lg;
+        @apply neu-button;
+        color: #c53030;
       }
       
       .form-input {
-        @apply flex h-10 w-full rounded-md border border-blue-300 bg-blue-50/50 px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-gray-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 shadow-md shadow-blue-100/60 focus:shadow-blue-200/60 transition-all duration-200 outline-none text-blue-900;
+        @apply neu-input;
       }
       
       .input-group {
-        @apply mb-5 p-4 rounded-md border border-blue-100 bg-white shadow-sm;
-      }
-      
-      .form-label {
-        @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 mb-2 block text-gray-700 flex items-center;
+        @apply mb-5 p-4 neu-section-concave;
       }
       
       .alert-success {
-        @apply relative w-full rounded-lg border border-green-200 p-4 mb-4 text-sm [&>svg]:text-green-500 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg~*]:pl-7 bg-green-50 text-green-800 shadow-sm;
+        @apply neu-alert neu-alert-success;
       }
       
       .alert-error {
-        @apply relative w-full rounded-lg border border-red-200 p-4 mb-4 text-sm [&>svg]:text-red-500 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg~*]:pl-7 bg-red-50 text-red-800 shadow-sm;
+        @apply neu-alert neu-alert-error;
+      }
+      
+      .tag {
+        @apply neu-tag;
+      }
+      
+      .link-button {
+        @apply neu-button neu-button-primary;
       }
       
       .table-container {
-        @apply w-full overflow-auto relative rounded-md border border-gray-200 shadow-sm;
+        @apply w-full overflow-auto relative rounded-md shadow-sm;
       }
       
       .table-header {
@@ -158,20 +166,12 @@
         @apply p-4 align-middle [&:has([role=checkbox])]:pr-0 text-sm text-gray-700;
       }
       
-      .tag {
-        @apply inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-blue-200 bg-blue-100/50 text-blue-700 hover:bg-blue-200/50 shadow-sm;
-      }
-      
       .masthead {
         @apply bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2 text-center text-sm font-medium shadow-md;
       }
       
       .footer {
         @apply mt-8 pt-4 border-t border-gray-200 text-gray-500 text-xs;
-      }
-      
-      .link-button {
-        @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700 h-10 px-4 py-2 shadow-md border border-blue-500/20 transition-all duration-200 hover:translate-y-[-1px] hover:shadow-lg;
       }
       
       .inline-form-group {
@@ -185,23 +185,56 @@
       .inline-form-group .form-input-container {
         @apply w-3/4;
       }
+      
+      /* 다크모드 호환성 수정 */
+      [data-theme="dark"] .text-gray-800,
+      [data-theme="dark"] .text-gray-700,
+      [data-theme="dark"] .text-gray-600 {
+        color: var(--text-primary);
+      }
+      
+      [data-theme="dark"] .text-gray-500,
+      [data-theme="dark"] .text-gray-400 {
+        color: var(--text-secondary);
+      }
+      
+      [data-theme="dark"] .border-blue-100,
+      [data-theme="dark"] .border-gray-200 {
+        border-color: var(--shadow-dark);
+      }
+      
+      /* 폼 요소 다크모드 호환성 */
+      [data-theme="dark"] .form-label {
+        color: var(--text-secondary);
+      }
     </style>
   </head>
-  <body class="min-h-screen bg-gray-50 font-sans antialiased">
+  <body class="min-h-screen font-sans antialiased">
 
-    <div class="container flex flex-col mx-auto mt-8 px-4 min-h-screen">
+    <div class="neu-container flex flex-col mx-auto mt-8 px-4 min-h-screen">
       <div class="w-full mb-6">
         <!-- 운영기관 식별자 (Identifier) -->
-        <div class="flex items-center mb-2">
+        <div class="neu-section-convex p-4 mb-4 flex items-center justify-between">
           <span class="text-gray-600 text-sm font-medium flex items-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
             KCA 뉴스레터 관리
           </span>
+          
+          <!-- 다크모드 토글 버튼 추가 -->
+          <button id="theme-toggle" class="neu-button p-2 h-10 w-10 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 dark-icon hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 light-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          </button>
         </div>
+        
         <!-- 자동 발송 시간 안내 -->
-        <div class="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4">
+        <div class="neu-section-concave mb-4">
           <p class="text-blue-700 text-sm font-medium flex items-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -212,7 +245,7 @@
       </div>
       
       <div class="flex-1">
-        <div class="bg-white rounded-lg shadow-md p-6 mb-6 border border-gray-200">
+        <div class="neu-card mb-6">
           {% block content %}{% endblock %}
         </div>
       </div>
@@ -226,5 +259,38 @@
         </div>
       </div>
     </div>
+    
+    <!-- 다크모드 토글 스크립트 -->
+    <script>
+      // 다크모드 토글 기능
+      document.addEventListener('DOMContentLoaded', function() {
+        const themeToggle = document.getElementById('theme-toggle');
+        const darkIcon = document.querySelector('.dark-icon');  
+        const lightIcon = document.querySelector('.light-icon');
+        const html = document.documentElement;
+        
+        // 저장된 테마 확인
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+          html.setAttribute('data-theme', 'dark');
+          darkIcon.classList.remove('hidden');
+          lightIcon.classList.add('hidden');
+        }
+        
+        themeToggle.addEventListener('click', function() {
+          if (html.getAttribute('data-theme') === 'dark') {
+            html.removeAttribute('data-theme');
+            localStorage.setItem('theme', 'light');
+            darkIcon.classList.add('hidden');
+            lightIcon.classList.remove('hidden');
+          } else {
+            html.setAttribute('data-theme', 'dark');
+            localStorage.setItem('theme', 'dark');
+            darkIcon.classList.remove('hidden');
+            lightIcon.classList.add('hidden');
+          }
+        });
+      });
+    </script>
   </body>
 </html> 
