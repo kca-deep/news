@@ -21,6 +21,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 import colorama
 from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
 
 # Google API 관련 모듈
 from google.oauth2.credentials import Credentials
@@ -30,10 +31,10 @@ from googleapiclient.discovery import build
 
 # 환경 변수 및 로깅 설정
 load_dotenv()
-LOG_DIR = pathlib.Path("logs")
+LOG_DIR: pathlib.Path = pathlib.Path("logs")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
-LOG_FILE = LOG_DIR / f"news_crawler_{TIMESTAMP}.log"
+TIMESTAMP: str = datetime.now().strftime("%Y%m%d_%H%M%S")
+LOG_FILE: pathlib.Path = LOG_DIR / f"news_crawler_{TIMESTAMP}.log"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,7 +47,7 @@ logger = logging.getLogger("news_crawler")
 
 # 터미널 색상 및 tqdm 진행바 설정
 colorama.init(autoreset=True)
-COLORS = {
+COLORS: Dict[str, str] = {
     "RED": "\033[91m",
     "GREEN": "\033[92m",
     "YELLOW": "\033[93m",
@@ -57,6 +58,29 @@ COLORS = {
     "RESET": "\033[0m",
 }
 
+# 상수화
+MAX_CONTENT_LENGTH: int = 2000
+SIMILARITY_THRESHOLD_DEFAULT: float = 0.65
+
+# 미리 컴파일한 정규표현식
+TITLE_CLEANUP_RE = re.compile(r"\s*[-–]\s*[\w\s]+$")
+NON_WORD_RE = re.compile(r"[^\w\s]")
+WHITESPACE_RE = re.compile(r"\s+")
+AD_PATTERN = re.compile(r"(광고|\[광고\]|sponsored content|AD).*?(?=\s|$)", flags=re.I)
+SOURCE_FONT_RE = re.compile(r'<font size="-1">([^<]+)</font>')
+SOURCE_BOLD_RE = re.compile(r"<b>([^<]+)</b>")
+
+
+def extract_source_from_desc(desc_text: str) -> str:
+    """설명 텍스트에서 기사 출처를 추출하는 헬퍼 함수"""
+    m = SOURCE_FONT_RE.search(desc_text)
+    if m:
+        return m.group(1).strip()
+    m = SOURCE_BOLD_RE.search(desc_text)
+    if m:
+        return m.group(1).strip()
+    return ""
+
 
 def colored_bar_format(color: str) -> str:
     return f"{color}{{desc}}: {{percentage:3.0f}}%|{{bar:30}}| {{n_fmt}}/{{total_fmt}} [{{elapsed}}<{{remaining}}, {{rate_fmt}}{{postfix}}]{COLORS['RESET']}"
@@ -64,7 +88,7 @@ def colored_bar_format(color: str) -> str:
 
 def get_tqdm_settings(
     desc: str, color: str, position: int, leave: bool = False
-) -> dict:
+) -> Dict[str, Any]:
     return {
         "desc": desc,
         "ncols": 0,
@@ -80,10 +104,10 @@ def get_tqdm_settings(
 # NewsFetcher 클래스: 뉴스 검색, 기사 본문 추출, 요약, 유사도 및 중복 제거 기능
 # =============================================================================
 class NewsFetcher:
-    def __init__(self):
-        self.news_cache: dict = {}
-        self.similarity_cache: dict = {}
-        self.api_usage_stats: dict = {
+    def __init__(self) -> None:
+        self.news_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self.similarity_cache: Dict[Tuple[str, str], float] = {}
+        self.api_usage_stats: Dict[str, Any] = {
             "total_tokens": 0,
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -92,18 +116,26 @@ class NewsFetcher:
             "api_calls": 0,
             "models": {},
         }
-        self.model_prices = {
+        self.model_prices: Dict[str, Dict[str, float]] = {
             "gpt-4o-mini": {"input": 0.15, "output": 0.60},
             "gpt-4o": {"input": 5.0, "output": 15.0},
             "gpt-4": {"input": 10.0, "output": 30.0},
             "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
         }
+        # 세션 재사용: HTTP 요청에 대해 커넥션 재사용
+        self.session = requests.Session()
+        self.session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+        )
 
     @staticmethod
     def preprocess_title(title: str) -> str:
-        title = re.sub(r"\s*[-–]\s*[\w\s]+$", "", title)
-        title = re.sub(r"[^\w\s]", " ", title)
-        title = re.sub(r"\s+", " ", title)
+        title = TITLE_CLEANUP_RE.sub("", title)
+        title = NON_WORD_RE.sub(" ", title)
+        title = WHITESPACE_RE.sub(" ", title)
         return title.strip().lower()
 
     @staticmethod
@@ -155,7 +187,7 @@ class NewsFetcher:
         model_stats["total_cost_krw"] += krw_cost
         model_stats["api_calls"] += 1
 
-    def _update_api_usage_from_result(self, result: dict, model: str) -> None:
+    def _update_api_usage_from_result(self, result: Dict[str, Any], model: str) -> None:
         if "usage" in result:
             prompt_tokens = result["usage"].get("prompt_tokens", 0)
             completion_tokens = result["usage"].get("completion_tokens", 0)
@@ -181,7 +213,7 @@ class NewsFetcher:
         country: str = "kr",
         language: str = "ko",
         max_items: int = 30,
-    ) -> list:
+    ) -> List[Dict[str, Any]]:
         cache_key = f"{query}_{country}_{language}"
         if cache_key in self.news_cache:
             logger.info(f"캐시에서 토픽 '{query}' 뉴스 로드")
@@ -191,16 +223,12 @@ class NewsFetcher:
         url = f"{base_url}/search?q={urllib.parse.quote(query)}" if query else base_url
         url += f"&hl={language}-{country}&gl={country}&ceid={country}:{language}"
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            }
-            response = requests.get(url, headers=headers, timeout=10)
+            response = self.session.get(url, timeout=10)
             if response.status_code != 200:
                 logger.error(f"HTTP 상태 코드 {response.status_code}")
                 return []
             root = ET.fromstring(response.content)
-            news_items = []
+            news_items: List[Dict[str, Any]] = []
             one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
             for item in root.findall(".//item"):
                 title_elem = item.find("title")
@@ -214,7 +242,7 @@ class NewsFetcher:
                 )
                 formatted_date = "No date info"
                 is_recent = True
-                parsed_date = None
+                parsed_date: Optional[datetime] = None
                 if pub_date_text:
                     try:
                         parsed_date = email.utils.parsedate_to_datetime(pub_date_text)
@@ -225,18 +253,12 @@ class NewsFetcher:
                         formatted_date = pub_date_text
                 if not is_recent:
                     continue
-                source = None
+                source: Optional[str] = None
                 m = re.search(r"^(.*?)\s*-\s*([^-]+)$", title)
                 if m:
                     source = m.group(2).strip()
                 if not source and desc_elem is not None and desc_elem.text:
-                    m = re.search(r'<font size="-1">([^<]+)</font>', desc_elem.text)
-                    if m:
-                        source = m.group(1).strip()
-                    else:
-                        m = re.search(r"<b>([^<]+)</b>", desc_elem.text)
-                        if m:
-                            source = m.group(1).strip()
+                    source = extract_source_from_desc(desc_elem.text)
                 if not source:
                     source_elem = item.find("source")
                     if source_elem is not None:
@@ -265,13 +287,9 @@ class NewsFetcher:
             logger.error(f"뉴스 가져오기 오류: {e}")
             return []
 
-    def get_article_content(self, url: str) -> tuple:
+    def get_article_content(self, url: str) -> Tuple[str, Optional[str]]:
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            }
-            response = requests.get(url, headers=headers, timeout=10)
+            response = self.session.get(url, timeout=10)
             if response.status_code != 200:
                 logger.error(f"HTTP 상태 코드 {response.status_code}")
                 return "기사 내용을 가져올 수 없습니다.", None
@@ -300,16 +318,11 @@ class NewsFetcher:
                     if tag.get_text(strip=True)
                 )
             if content:
-                content = re.sub(r"\s+", " ", content).strip()
-                content = re.sub(
-                    r"(광고|\[광고\]|sponsored content|AD).*?(?=\s|$)",
-                    "",
-                    content,
-                    flags=re.I,
-                )
-                return (
-                    content[:2000] + "..." if len(content) > 2000 else content
-                ), source
+                content = WHITESPACE_RE.sub(" ", content).strip()
+                content = AD_PATTERN.sub("", content)
+                if len(content) > MAX_CONTENT_LENGTH:
+                    return content[:MAX_CONTENT_LENGTH] + "...", source
+                return content, source
             return "기사 내용을 추출할 수 없습니다.", source
         except Exception as e:
             logger.error(f"기사 내용 가져오기 오류: {e}")
@@ -320,7 +333,7 @@ class NewsFetcher:
         if not api_key:
             logger.error("OpenAI API 키가 설정되지 않았습니다.")
             return "요약을 생성할 수 없습니다. API 키를 확인하세요."
-        # 요약 프롬프트 보완:
+        # 요약 프롬프트 보완
         system_prompt = (
             "당신은 최고 수준의 뉴스 에디터이자 전문 요약가입니다. 아래 지침에 따라, 제공된 기사 제목과 본문에 기재된 내용만을 사용하여 500자 이내의 뉴스 요약문을 작성하세요.\n\n"
             "1. **기사 본문에 명시된 내용만 사용:** 기사에 없는 정보(예: 날짜, 사건, 인물 등)는 절대 추가하지 않습니다.\n"
@@ -365,7 +378,7 @@ class NewsFetcher:
             logger.error(f"OpenAI API 요청 오류: {e}")
             return "요약 생성 중 오류 발생."
 
-    def process_news_item(self, item: dict) -> dict:
+    def process_news_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
         try:
             content, article_source = self.get_article_content(item["link"])
             if article_source and item["source"] == "Unknown":
@@ -376,7 +389,9 @@ class NewsFetcher:
             logger.error(f"뉴스 항목 처리 오류: {e}")
             return item
 
-    def calculate_similarity_with_openai(self, news1: dict, news2: dict) -> float:
+    def calculate_similarity_with_openai(
+        self, news1: Dict[str, Any], news2: Dict[str, Any]
+    ) -> float:
         key = tuple(sorted([news1["title"], news2["title"]]))
         if key in self.similarity_cache:
             return self.similarity_cache[key]
@@ -453,8 +468,10 @@ class NewsFetcher:
             return 0.0
 
     def filter_duplicate_news(
-        self, news_items: list, similarity_threshold: float = 0.7
-    ) -> list:
+        self,
+        news_items: List[Dict[str, Any]],
+        similarity_threshold: float = SIMILARITY_THRESHOLD_DEFAULT,
+    ) -> List[Dict[str, Any]]:
         if not news_items or len(news_items) <= 1:
             return news_items
 
@@ -475,7 +492,7 @@ class NewsFetcher:
                     basic_sim = self.simple_jaccard_similarity(
                         current_title, unique_item["title"]
                     )
-                    logger.info(
+                    logger.debug(
                         f"비교: '{current_title}' vs '{unique_item['title']}' -> 기본 유사도: {basic_sim:.2f}"
                     )
                     if basic_sim >= SIMPLE_SIM_HIGH:
@@ -510,13 +527,13 @@ class NewsFetcher:
 # EmailService 클래스: Gmail API 및 SMTP+OAuth2 방식 이메일 발송
 # =============================================================================
 class EmailService:
-    def __init__(self):
+    def __init__(self) -> None:
         self.sender_email: str = os.getenv("EMAIL_USERNAME")
 
-    def get_gmail_service(self):
+    def get_gmail_service(self) -> Optional[Any]:
         SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
-        creds = None
-        token_json_path = os.getenv("EMAIL_OAUTH2_TOKEN", "token.json")
+        creds: Optional[Credentials] = None
+        token_json_path: str = os.getenv("EMAIL_OAUTH2_TOKEN", "token.json")
 
         if os.path.exists(token_json_path):
             try:
@@ -543,7 +560,7 @@ class EmailService:
                 creds.refresh(Request())
             else:
                 logger.info("새 OAuth 인증 흐름 시작 중...")
-                credentials_file = os.getenv(
+                credentials_file: str = os.getenv(
                     "GMAIL_CREDENTIALS_FILE", "credentials.json"
                 )
                 if not os.path.exists(credentials_file):
@@ -661,12 +678,12 @@ class EmailService:
 # SubscriberManager 클래스: 구독자 로드, 뉴스 수집 및 이메일 발송 담당
 # =============================================================================
 class SubscriberManager:
-    def __init__(self, news_fetcher: NewsFetcher, email_service: EmailService):
+    def __init__(self, news_fetcher: NewsFetcher, email_service: EmailService) -> None:
         self.news_fetcher = news_fetcher
         self.email_service = email_service
 
     @staticmethod
-    def load_subscribers(file_path: str = "subscribers.json") -> list:
+    def load_subscribers(file_path: str = "subscribers.json") -> List[Dict[str, Any]]:
         """구독자 정보 로드"""
         try:
             if not os.path.exists(file_path):
@@ -674,14 +691,11 @@ class SubscriberManager:
                     f"{file_path} 파일이 없습니다. 구독자 목록을 생성합니다."
                 )
                 return []
-
             with open(file_path, "r", encoding="utf-8") as f:
                 subscribers = json.load(f)
-
             if not subscribers:
                 logger.warning("구독자 목록이 비어 있습니다.")
                 return []
-
             logger.info(f"{len(subscribers)}명의 구독자 정보를 로드했습니다.")
             return subscribers
         except Exception as e:
@@ -689,7 +703,7 @@ class SubscriberManager:
             return []
 
     @staticmethod
-    def log_news_titles(news_items: list, prefix: str = "") -> None:
+    def log_news_titles(news_items: List[Dict[str, Any]], prefix: str = "") -> None:
         if not news_items:
             logger.warning(f"{prefix} 뉴스 항목이 없습니다.")
             return
@@ -698,8 +712,10 @@ class SubscriberManager:
             topic = item.get("query", "기타")
             logger.info(f"{idx}. [{topic}] {item['title']}")
 
-    def fetch_news_for_subscriber(self, subscriber: dict) -> list:
-        collected_news = []
+    def fetch_news_for_subscriber(
+        self, subscriber: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        collected_news: List[Dict[str, Any]] = []
         topics = subscriber.get("topics", [])
         unique_topics = list(dict.fromkeys(topics))
         name = subscriber.get("name", "구독자")
@@ -723,7 +739,8 @@ class SubscriberManager:
                     if news_items:
                         logger.info(f"토픽 '{topic}'에서 {len(news_items)}개 뉴스 발견")
                         unique_news = self.news_fetcher.filter_duplicate_news(
-                            news_items, similarity_threshold=0.65
+                            news_items,
+                            similarity_threshold=SIMILARITY_THRESHOLD_DEFAULT,
                         )
                         logger.info(
                             f"토픽 '{topic}'에서 {len(unique_news)}개 고유 뉴스 선정"
@@ -760,8 +777,10 @@ class SubscriberManager:
         return collected_news
 
     def remove_duplicates_from_news(
-        self, news_items: list, similarity_threshold: float = 0.65
-    ) -> list:
+        self,
+        news_items: List[Dict[str, Any]],
+        similarity_threshold: float = SIMILARITY_THRESHOLD_DEFAULT,
+    ) -> List[Dict[str, Any]]:
         if not news_items or len(news_items) <= 1:
             return news_items
 
@@ -769,7 +788,7 @@ class SubscriberManager:
         for item in news_items:
             topic_groups[item.get("query", "기타")].append(item)
 
-        cleaned_by_topic = {}
+        cleaned_by_topic: Dict[str, List[Dict[str, Any]]] = {}
         for topic, items in topic_groups.items():
             logger.info(f"토픽 '{topic}' 내부 중복 제거 시작 (총 {len(items)}개)")
             unique_items = []
@@ -816,7 +835,9 @@ class SubscriberManager:
         logger.info(f"최종 뉴스 항목: {len(final_news_clipped)}개")
         return final_news_clipped
 
-    def process_subscriber(self, subscriber: dict, collected_news: list) -> dict:
+    def process_subscriber(
+        self, subscriber: Dict[str, Any], collected_news: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         name = subscriber.get("name", "구독자")
         email_addr = subscriber.get("email", "")
         topics = subscriber.get("topics", [])
@@ -839,7 +860,7 @@ class SubscriberManager:
 
         logger.info(f"{name} 이메일 콘텐츠 준비 (수집 뉴스: {len(collected_news)}개)")
         deduped_news = self.remove_duplicates_from_news(
-            collected_news, similarity_threshold=0.65
+            collected_news, similarity_threshold=SIMILARITY_THRESHOLD_DEFAULT
         )
         self.log_news_titles(deduped_news, prefix=f"{name} 최종 뉴스 목록")
 
@@ -849,7 +870,6 @@ class SubscriberManager:
                 if topic == item.get("query", "기타"):
                     topic_news[topic].append(item)
 
-        # 뉴스가 없는 토픽 목록 수집
         topics_without_news = [
             topic
             for topic in topics
@@ -886,7 +906,10 @@ class SubscriberManager:
 
     @staticmethod
     def build_email_html(
-        name: str, current_date: str, topic_news: dict, topics_without_news: list = None
+        name: str,
+        current_date: str,
+        topic_news: Dict[str, List[Dict[str, Any]]],
+        topics_without_news: Optional[List[str]] = None,
     ) -> str:
         html = f"""<!DOCTYPE html>
 <html lang="ko">
@@ -910,7 +933,6 @@ class SubscriberManager:
       <p style="color: #1e40af; font-size: 14px; margin-top: 8px;">최근 관심 토픽 뉴스를 정리했습니다.</p>
     </div>
 """
-        # 뉴스가 없는 토픽 정보 표시
         if topics_without_news and len(topics_without_news) > 0:
             html += f"""
     <div style="margin-bottom: 24px; padding: 16px; background: #fff7ed; border-left: 4px solid #f97316; border-radius: 4px;">
@@ -993,7 +1015,7 @@ def main() -> None:
             f"전체 {len(subscribers)}명 구독자, 고유 토픽 {len(all_topics)}개 발견"
         )
 
-        topic_news_cache = {}
+        topic_news_cache: Dict[str, List[Dict[str, Any]]] = {}
 
         with tqdm(
             total=len(subscribers),
@@ -1014,8 +1036,8 @@ def main() -> None:
                     continue
 
                 logger.info(f"{name} 뉴스 수집 시작")
-                cached_subscriber_news = []
-                topics_to_fetch = []
+                cached_subscriber_news: List[Dict[str, Any]] = []
+                topics_to_fetch: List[str] = []
                 for topic in topics:
                     if topic in topic_news_cache:
                         logger.info(
@@ -1079,7 +1101,6 @@ def main() -> None:
         logger.info(
             f"총 비용: ${stats['total_cost_usd']:.4f} (약 ₩{stats['total_cost_krw']:.0f})"
         )
-
         logger.info("-" * 50)
         logger.info("모델별 사용량:")
         for model, model_stats in stats["models"].items():
@@ -1089,7 +1110,6 @@ def main() -> None:
             logger.info(
                 f"    - 비용: ${model_stats['total_cost_usd']:.4f} (약 ₩{model_stats['total_cost_krw']:.0f})"
             )
-
         logger.info("=" * 50)
         logger.info("모든 구독자 처리 완료")
 
