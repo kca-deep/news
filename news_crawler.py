@@ -320,25 +320,14 @@ class NewsFetcher:
         if not api_key:
             logger.error("OpenAI API 키가 설정되지 않았습니다.")
             return "요약을 생성할 수 없습니다. API 키를 확인하세요."
+        # 요약 프롬프트 보완:
         system_prompt = (
-            "당신은 최고 수준의 뉴스 에디터이자 전문 요약가로, 복잡한 뉴스 기사를 명확하고 간결하게 요약하는 전문가입니다.\n\n"
-            "다음 원칙에 따라 뉴스 기사의 500자 이내 요약문을 작성해주세요:\n\n"
-            "1. 필수 요소:\n"
-            "   - 기사의 핵심 주제와 가장 중요한 사실 정보를 먼저 전달\n"
-            "   - 주요 인물, 장소, 날짜 등 기본 정보 포함\n"
-            "   - 주요 수치, 통계, 데이터가 있다면 반드시 포함\n"
-            "   - 중요한 인용구나 발언은 간결하게 인용\n"
-            "   - 이슈의 배경, 맥락 및 잠재적 영향 제시\n\n"
-            "2. 키워드 처리:\n"
-            "   - 기사에서 반복되는 핵심 키워드나 전문용어를 파악하여 적절히 활용\n"
-            "   - 업계나 분야별 전문용어는 필요한 경우 간단한 설명 추가\n\n"
-            "3. 구성 및 형식:\n"
-            "   - 가장 중요한 정보부터 순차적으로 배치\n"
-            "   - 내용에 따라 1-3개의 자연스러운 문단으로 구성\n"
-            "   - 번호나 글머리 기호 없이 하나의 연결된 흐름으로 작성\n"
-            "   - 객관적이고 중립적인 톤 유지 (원문의 관점 그대로 전달)\n"
-            "   - 정확히 500자 이내로 작성 (초과하지 말 것)\n\n"
-            "이 요약은 원본 기사를 읽지 않고도 핵심 내용을 완벽히 이해할 수 있도록 충분히 상세하면서도 간결해야 합니다."
+            "당신은 최고 수준의 뉴스 에디터이자 전문 요약가입니다. 아래 지침에 따라, 제공된 기사 제목과 본문에 기재된 내용만을 사용하여 500자 이내의 뉴스 요약문을 작성하세요.\n\n"
+            "1. **기사 본문에 명시된 내용만 사용:** 기사에 없는 정보(예: 날짜, 사건, 인물 등)는 절대 추가하지 않습니다.\n"
+            "2. **핵심 정보 우선 전달:** 기사에서 가장 중요한 주제와 사실, 인물, 장소, 날짜(기사에 명시된 경우) 등을 포함합니다.\n"
+            "3. **간결하고 명확하게:** 1-3개의 자연스러운 문단으로 구성하며, 객관적이고 중립적인 톤을 유지합니다.\n"
+            "4. **정확한 요약:** 요약은 제공된 기사 내용의 핵심만을 전달하며, 불필요한 추론이나 보충 정보를 포함하지 않습니다.\n\n"
+            "제목과 본문 내용을 참고하여, 오직 기사에 기재된 정보만으로 요약문을 작성하세요."
         )
         data = {
             "model": os.getenv("GPT_MODEL", "gpt-4o-mini"),
@@ -346,7 +335,7 @@ class NewsFetcher:
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": f"제목: {title}\n\n내용: {text}\n\n위 뉴스 기사를 500자 이내로 핵심을 놓치지 않고 요약해주세요.",
+                    "content": f"제목: {title}\n\n내용: {text}\n\n위 뉴스 기사를 500자 이내로 핵심만을 반영하여 요약해주세요.",
                 },
             ],
             "temperature": 0.5,
@@ -677,44 +666,26 @@ class SubscriberManager:
         self.email_service = email_service
 
     @staticmethod
-    def load_subscribers(file_path: str = "subscribers.txt") -> list:
-        subscribers = []
-        if not os.path.exists(file_path):
-            logger.error(f"구독자 파일이 존재하지 않습니다: {file_path}")
-            return subscribers
+    def load_subscribers(file_path: str = "subscribers.json") -> list:
+        """구독자 정보 로드"""
         try:
-            logger.info(f"구독자 파일 로드 중: {file_path}")
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                current_sub = {}
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        if current_sub.get("email") and current_sub.get("topics"):
-                            subscribers.append(current_sub)
-                        current_sub = {}
-                        continue
-                    if line.startswith("ID:"):
-                        if current_sub.get("email") and current_sub.get("topics"):
-                            subscribers.append(current_sub)
-                        current_sub = {
-                            "id": line[3:].strip(),
-                            "name": "",
-                            "email": "",
-                            "topics": [],
-                        }
-                    elif line.startswith("이름:") and current_sub:
-                        current_sub["name"] = line[3:].strip()
-                    elif line.startswith("이메일:") and current_sub:
-                        current_sub["email"] = line[4:].strip()
-                    elif line.startswith("토픽:") and current_sub:
-                        topics = [topic.strip() for topic in line[3:].split(",")]
-                        current_sub["topics"] = topics
-                if current_sub.get("email") and current_sub.get("topics"):
-                    subscribers.append(current_sub)
-            logger.info(f"총 {len(subscribers)}명의 구독자 로드 완료")
+            if not os.path.exists(file_path):
+                logger.warning(
+                    f"{file_path} 파일이 없습니다. 구독자 목록을 생성합니다."
+                )
+                return []
+
+            with open(file_path, "r", encoding="utf-8") as f:
+                subscribers = json.load(f)
+
+            if not subscribers:
+                logger.warning("구독자 목록이 비어 있습니다.")
+                return []
+
+            logger.info(f"{len(subscribers)}명의 구독자 정보를 로드했습니다.")
             return subscribers
         except Exception as e:
-            logger.error(f"구독자 정보 로드 오류: {e}")
+            logger.error(f"구독자 로드 중 오류 발생: {str(e)}")
             return []
 
     @staticmethod
@@ -939,7 +910,6 @@ class SubscriberManager:
       <p style="color: #1e40af; font-size: 14px; margin-top: 8px;">최근 관심 토픽 뉴스를 정리했습니다.</p>
     </div>
 """
-
         # 뉴스가 없는 토픽 정보 표시
         if topics_without_news and len(topics_without_news) > 0:
             html += f"""
@@ -1012,7 +982,7 @@ def main() -> None:
         subscriber_manager = SubscriberManager(news_fetcher, email_service)
         subscribers = subscriber_manager.load_subscribers()
         if not subscribers:
-            logger.error("구독자가 없습니다. subscribers.txt 파일을 확인하세요.")
+            logger.error("구독자가 없습니다. subscribers.json 파일을 확인하세요.")
             return
 
         all_topics = set()

@@ -21,6 +21,7 @@ credentials.json
 
 # 구독자 데이터 (민감한 정보 포함)
 subscribers.txt
+subscribers.json
 
 # Python 관련 파일
 __pycache__/

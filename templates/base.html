@@ -20,10 +20,25 @@
         theme: {
           container: {
             center: true,
-            padding: "2rem",
+            padding: {
+              DEFAULT: '1rem',
+              sm: '1.5rem',
+              lg: '2rem'
+            },
             screens: {
+              sm: '640px',
+              md: '768px',
+              lg: '1024px',
+              xl: '1280px',
               "2xl": "1400px",
             },
+          },
+          screens: {
+            'sm': '640px',
+            'md': '768px',
+            'lg': '1024px',
+            'xl': '1280px',
+            '2xl': '1536px',
           },
           extend: {
             colors: {
@@ -311,6 +326,44 @@
         border-color: rgba(239, 68, 68, 0.3);
       }
       
+      /* 모바일 메뉴 */
+      .mobile-menu {
+        position: fixed;
+        top: 4rem;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: var(--background);
+        padding: 1.5rem;
+        z-index: 40;
+        transform: translateY(-100%);
+        opacity: 0;
+        transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+      }
+      
+      .mobile-menu.open {
+        transform: translateY(0);
+        opacity: 1;
+      }
+      
+      .mobile-menu-item {
+        display: block;
+        padding: 1rem;
+        margin-bottom: 0.5rem;
+        border-radius: 0.375rem;
+        font-weight: 500;
+        transition: background-color 0.2s;
+      }
+      
+      .mobile-menu-item:hover {
+        background-color: var(--accent);
+      }
+      
+      .mobile-menu-item.active {
+        background-color: var(--primary);
+        color: var(--primary-foreground);
+      }
+      
       .btn-sm { height: 2.25rem; padding: 0 0.75rem; }
       .btn-lg { height: 2.75rem; padding: 0 2rem; }
       .btn-icon { height: 2.5rem; width: 2.5rem; padding: 0; }
@@ -320,8 +373,22 @@
         width: 100%;
         margin-left: auto;
         margin-right: auto;
-        padding-left: 2rem;
-        padding-right: 2rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+      }
+      
+      @media (min-width: 640px) {
+        .container {
+          padding-left: 1.5rem;
+          padding-right: 1.5rem;
+        }
+      }
+      
+      @media (min-width: 1024px) {
+        .container {
+          padding-left: 2rem;
+          padding-right: 2rem;
+        }
       }
       
       .flex { display: flex; }
@@ -391,6 +458,7 @@
       .text-secondary-foreground { color: var(--secondary-foreground); }
       
       .hidden { display: none; }
+      .block { display: block; }
       .sticky { position: sticky; }
       .top-0 { top: 0; }
       .z-50 { z-index: 50; }
@@ -423,8 +491,32 @@
       .text-center { text-align: center; }
       
       /* 미디어 쿼리 */
+      .md\:flex { display: flex; }
+      .md\:hidden { display: none; }
+      .lg\:flex { display: flex; }
+      .lg\:hidden { display: none; }
+      
+      @media (max-width: 767px) {
+        .sm\:hidden { display: none; }
+        .sm\:block { display: block; }
+        .card-header, .card-content {
+          padding: 1rem;
+        }
+      }
+      
       @media (min-width: 768px) {
         .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .md\:hidden { display: none; }
+        .md\:block { display: block; }
+        .md\:flex { display: flex; }
+      }
+      
+      @media (min-width: 1024px) {
+        .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .lg\:col-span-2 { grid-column: span 2 / span 2; }
+        .lg\:hidden { display: none; }
+        .lg\:block { display: block; }
+        .lg\:flex { display: flex; }
       }
       
       /* 기존 스타일 덮어쓰기 */
@@ -452,7 +544,7 @@
   </head>
   <body>
     <header class="sticky top-0 z-50 w-full border-b bg-background">
-      <div class="container flex h-16 items-center">
+      <div class="container flex h-16 items-center justify-between">
         <div class="flex items-center gap-2 font-bold">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6 text-primary">
             <path d="M21 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"></path>
@@ -461,7 +553,8 @@
           <span>KCA 뉴스레터</span>
         </div>
         
-        <nav class="ml-auto flex gap-4">
+        <!-- 데스크톱 메뉴 (md 이상에서만 표시) -->
+        <nav class="hidden md:flex ml-auto gap-4">
           <a href="{{ url_for('list_subscribers') }}" class="text-sm font-medium transition-colors hover:text-primary {% if request.path == url_for('list_subscribers') %}text-primary{% endif %}">
             구독자
           </a>
@@ -470,7 +563,16 @@
           </a>
         </nav>
         
-        <div class="ml-4 flex items-center gap-2">
+        <!-- 햄버거 메뉴 (모바일용) -->
+        <button id="mobile-menu-button" class="md:hidden p-2 rounded-md hover:bg-accent">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="12" x2="20" y2="12"></line>
+            <line x1="4" y1="6" x2="20" y2="6"></line>
+            <line x1="4" y1="18" x2="20" y2="18"></line>
+          </svg>
+        </button>
+        
+        <div class="flex items-center gap-2 ml-4">
           {% if session.get('logged_in') %}
             <a href="{{ url_for('logout') }}" class="btn btn-outline btn-sm">로그아웃</a>
           {% else %}
@@ -492,6 +594,18 @@
               <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
             </svg>
           </button>
+        </div>
+      </div>
+      
+      <!-- 모바일 메뉴 (토글 시 표시) -->
+      <div id="mobile-menu" class="mobile-menu md:hidden">
+        <div class="flex flex-col space-y-3">
+          <a href="{{ url_for('list_subscribers') }}" class="mobile-menu-item {% if request.path == url_for('list_subscribers') %}active{% endif %}">
+            구독자
+          </a>
+          <a href="{{ url_for('add_subscriber') }}" class="mobile-menu-item {% if request.path == url_for('add_subscriber') %}active{% endif %}">
+            구독자 추가
+          </a>
         </div>
       </div>
     </header>
@@ -550,6 +664,21 @@
             localStorage.setItem('theme', 'dark');
             darkIcon.classList.add('hidden');
             lightIcon.classList.remove('hidden');
+          }
+        });
+        
+        // 모바일 메뉴 토글
+        const mobileMenuButton = document.getElementById('mobile-menu-button');
+        const mobileMenu = document.getElementById('mobile-menu');
+        
+        mobileMenuButton.addEventListener('click', function() {
+          mobileMenu.classList.toggle('open');
+        });
+        
+        // 화면 크기 변경 시 모바일 메뉴 닫기
+        window.addEventListener('resize', function() {
+          if (window.innerWidth >= 768) {
+            mobileMenu.classList.remove('open');
           }
         });
       });
