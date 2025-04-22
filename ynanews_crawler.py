@@ -115,17 +115,28 @@ log_filename = f"ynanews_{log_date}.log"
 log_dir = "logs"
 os.makedirs(log_dir, exist_ok=True)
 log_path = os.path.join(log_dir, log_filename)
-file_handler = logging.FileHandler(log_path, encoding="utf-8")
-file_handler.setFormatter(ColoredFormatter())
-file_handler.setLevel(logging.ERROR)
+
+# 로거 설정
 logger = logging.getLogger()
-logger.handlers = [file_handler]
 logger.setLevel(logging.INFO)
+
+# 파일 핸들러 설정 (INFO 레벨 이상, 컬러 없는 포맷)
+file_formatter = logging.Formatter(
+    fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+)
+file_handler = logging.FileHandler(log_path, encoding="utf-8")
+file_handler.setFormatter(file_formatter)
+file_handler.setLevel(logging.INFO)
+
+# 콘솔 핸들러 설정 (INFO 레벨 이상, 컬러 포맷)
 console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+console_handler.setFormatter(ColoredFormatter())
 console_handler.setLevel(logging.INFO)
-logger.addHandler(console_handler)
-logging.info(f"로그 파일: {log_path} (ERROR 레벨만 기록)")
+
+# 핸들러 추가
+logger.handlers = [file_handler, console_handler]
+
+logging.info(f"로그 파일: {log_path} (INFO 레벨 이상 기록)")
 logging.info("콘솔 출력: INFO 이상")
 
 
