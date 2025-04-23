@@ -296,87 +296,148 @@ def main():
     logging.info(f"OpenAI API Key Loaded: {bool(OPENAI_API_KEY)}")
     logging.info(f"검색 키워드: {keywords}")
 
-    # 1. YNA RSS 피드 기사 수집
-    rss_url = "https://www.yna.co.kr/rss/news.xml"
-    articles = []
-    for attempt in range(3):
-        try:
-            logging.info(f"RSS 접속 시도 {attempt+1}/3")
-            resp = requests.get(rss_url, timeout=10)
-            resp.raise_for_status()
-            if resp.text:
-                feed = feedparser.parse(resp.text)
-                articles = feed.get("entries", [])[:200]
-                if not articles:
-                    logging.warning("RSS 기사 없음")
-                    time.sleep(2)
-                    continue
-                else:
-                    logging.info("RSS 기사 수집 성공")
-                    break
-        except Exception as e:
-            logging.error(f"RSS 접속 오류: {e}")
-            time.sleep(2)
-    logging.info(f"전체 기사 수: {len(articles)}")
-    if articles:
-        logging.info(f"첫 기사 제목: {articles[0].title}")
+    # RSS 피드 URL 정의
+    rss_feeds = {
+        "전체뉴스": "https://www.yna.co.kr/rss/news.xml",
+        "산업": "https://www.yna.co.kr/rss/industry.xml",
+    }
 
-    # 2. 최근 2일 기사 필터링
+    # 1. YNA RSS 피드 기사 수집
+    articles = []
+    for feed_name, rss_url in rss_feeds.items():
+        for attempt in range(3):
+            try:
+                logging.info(f"{feed_name} RSS 접속 시도 {attempt+1}/3")
+                resp = requests.get(rss_url, timeout=10)
+                resp.raise_for_status()
+                if resp.text:
+                    feed = feedparser.parse(resp.text)
+                    feed_articles = feed.get("entries", [])[:200]
+                    if not feed_articles:
+                        logging.warning(f"{feed_name} RSS 기사 없음")
+                        time.sleep(2)
+                        continue
+                    else:
+                        articles.extend(feed_articles)
+                        logging.info(f"{feed_name} RSS 기사 수집 성공")
+                        break
+            except Exception as e:
+                logging.error(f"{feed_name} RSS 접속 오류: {e}")
+                time.sleep(2)
+
+    # 중복 기사 제거 (URL 기준)
+    unique_articles = list({art.link: art for art in articles}.values())
+    logging.info(f"전체 기사 수 (중복 제거 후): {len(unique_articles)}")
+    if unique_articles:
+        logging.info(f"첫 기사 제목: {unique_articles[0].title}")
+
+    # 2. 최근 24시간 기사 필터링
     recent = []
-    two_days = datetime.now() - timedelta(days=2)
-    for art in articles:
+    one_day = datetime.now() - timedelta(days=1)  # 2일에서 1일로 수정
+    for art in unique_articles:
         try:
             pub = datetime(*art.published_parsed[:6])
-            if pub >= two_days:
+            if pub >= one_day:  # 24시간 이내 기사만 필터링
                 art.pub_date_obj = pub
                 recent.append(art)
         except Exception:
             continue
-    logging.info(f"최근 2일 기사 수: {len(recent)}")
+    logging.info(f"최근 24시간 기사 수: {len(recent)}")  # 로그 메시지도 수정
 
     # 2.5. 본문 추출 함수
     def get_full_article_content(url):
-        try:
-            headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/html"}
-            r = requests.get(url, headers=headers, timeout=15)
-            r.raise_for_status()
-            soup = BeautifulSoup(r.text, "html.parser")
-            for tag in soup.select(
-                "script, style, nav, footer, .ad, .advertisement, .banner, .copyright"
-            ):
-                tag.decompose()
-            selectors = [
-                "div.story-news",
-                "div.article-body",
-                "article",
-                "div.article",
-                "div.news-content",
-                "div.content",
-                "div.entry-content",
-                "div.article-content",
-            ]
-            for sel in selectors:
-                container = soup.select_one(sel)
-                if container:
-                    ps = container.find_all("p")
-                    if ps:
-                        text = "\n".join(p.get_text(strip=True) for p in ps)
+        def clean_text(text):
+            # 연속된 공백/줄바꿈 정리
+            text = re.sub(r"\s+", " ", text)
+            # 불필요한 특수문자 제거
+            text = re.sub(r"[\xa0\u200b]", "", text)
+            # 앞뒤 공백 제거
+            return text.strip()
+
+        for attempt in range(3):  # 최대 3회 재시도
+            try:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+                }
+                r = requests.get(url, headers=headers, timeout=15)
+                r.raise_for_status()
+                r.encoding = "utf-8"  # 인코딩 명시
+
+                soup = BeautifulSoup(r.text, "html.parser")
+
+                # 불필요한 요소 제거
+                for tag in soup.select(
+                    "script, style, nav, footer, header, .ad, .advertisement, .banner, .copyright, "
+                    ".share-info, .related-article, .article-ad, .article-sns, .article-more, "
+                    ".article-timestamp, .article-header, .article-footer, .article-tools"
+                ):
+                    tag.decompose()
+
+                # 연합뉴스 특화 셀렉터 포함
+                selectors = [
+                    "div.article-story",
+                    "div.yna-content",
+                    "div.comp-box.article-body",
+                    "div.story-news",
+                    "div.article-body",
+                    "article",
+                    "div.article",
+                    "div.news-content",
+                    "div.content",
+                    "div.entry-content",
+                    "div.article-content",
+                ]
+
+                for sel in selectors:
+                    container = soup.select_one(sel)
+                    if container:
+                        # 본문 내 불필요한 요소 추가 제거
+                        for tag in container.select(
+                            ".reporter-info, .article-ad, .article-sns"
+                        ):
+                            tag.decompose()
+
+                        # 단락 추출
+                        ps = container.find_all("p")
+                        if ps:
+                            text = "\n".join(clean_text(p.get_text()) for p in ps)
+                            if len(text) > 200:
+                                return text
+
+                        # 전체 텍스트 추출
+                        text = clean_text(container.get_text(separator="\n"))
                         if len(text) > 200:
                             return text
-                    text = container.get_text(separator="\n").strip()
-                    if len(text) > 200:
-                        return text
-            meta = soup.find("meta", attrs={"name": "description"}) or soup.find(
-                "meta", attrs={"property": "og:description"}
-            )
-            if meta and meta.get("content"):
-                cont = meta["content"].strip()
-                if len(cont) > 100:
-                    return cont
-            return soup.get_text(separator="\n").strip()
-        except Exception as e:
-            logging.error(f"본문 추출 오류: {url} - {e}")
-            return ""
+
+                # 메타 설명 확인
+                meta_selectors = [
+                    {"name": "description"},
+                    {"property": "og:description"},
+                    {"name": "twitter:description"},
+                ]
+                for meta_sel in meta_selectors:
+                    meta = soup.find("meta", attrs=meta_sel)
+                    if meta and meta.get("content"):
+                        cont = clean_text(meta["content"])
+                        if len(cont) > 100:
+                            return cont
+
+                # 최후의 수단: 전체 텍스트
+                return clean_text(soup.get_text(separator="\n"))
+
+            except requests.RequestException as e:
+                logging.warning(f"본문 추출 시도 {attempt + 1}/3 실패: {url} - {e}")
+                if attempt < 2:  # 마지막 시도가 아니면 재시도
+                    time.sleep(2)  # 재시도 전 대기
+                continue
+            except Exception as e:
+                logging.error(f"본문 추출 예외 발생: {url} - {e}")
+                traceback.print_exc()
+                break
+
+        return ""  # 모든 시도 실패시 빈 문자열 반환
 
     # 3. 기사 요약 (OpenAI API)
     def summarize_text(text):
